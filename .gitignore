@@ -1,0 +1,9 @@
+# Unity meta files are needed for the asset database
+# but we keep them so GUIDs stay stable across installs
+
+# OS
+.DS_Store
+Thumbs.db
+
+# EditorPrefs are local — not committed
+# (Blueprint IDs are stored there, not in files)
