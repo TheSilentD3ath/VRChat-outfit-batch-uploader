@@ -419,82 +419,93 @@ namespace ShiroTools
             var mesh    = _skinRenderer.sharedMesh;
             int bsCount = mesh.blendShapeCount;
 
-            using (new EditorGUI.IndentLevelScope())
+            // Search bar
+            using (new EditorGUILayout.HorizontalScope())
             {
-                // Search bar
-                using (new EditorGUILayout.HorizontalScope())
+                EditorGUILayout.LabelField("Search:", GUILayout.Width(58));
+                entry.BlendShapeSearch = EditorGUILayout.TextField(entry.BlendShapeSearch ?? "");
+                if (GUILayout.Button("✕", EditorStyles.miniButton, GUILayout.Width(22)))
                 {
-                    EditorGUILayout.LabelField("Search:", GUILayout.Width(52));
-                    entry.BlendShapeSearch = EditorGUILayout.TextField(entry.BlendShapeSearch ?? "");
-                    if (GUILayout.Button("✕", EditorStyles.miniButton, GUILayout.Width(22)))
-                        entry.BlendShapeSearch = "";
+                    entry.BlendShapeSearch = "";
+                    GUI.FocusControl(null);
                 }
+            }
 
-                // "Copy current values" convenience button
-                if (GUILayout.Button("Capture current skin values as overrides", EditorStyles.miniButton))
-                {
-                    for (int i = 0; i < bsCount; i++)
-                    {
-                        float w = _skinRenderer.GetBlendShapeWeight(i);
-                        if (w > 0f)
-                            entry.BlendShapes[mesh.GetBlendShapeName(i)] = w;
-                    }
-                    SaveBlendShapes(entry);
-                }
-
-                EditorGUILayout.Space(2);
-
-                string filter = (entry.BlendShapeSearch ?? "").ToLower();
-                bool   dirty  = false;
-
+            // "Capture" convenience button
+            if (GUILayout.Button("Capture current skin values as overrides", EditorStyles.miniButton))
+            {
                 for (int i = 0; i < bsCount; i++)
                 {
-                    string bsName = mesh.GetBlendShapeName(i);
+                    float w = _skinRenderer.GetBlendShapeWeight(i);
+                    if (w > 0f)
+                        entry.BlendShapes[mesh.GetBlendShapeName(i)] = w;
+                }
+                SaveBlendShapes(entry);
+                Repaint();
+            }
 
-                    // Filter
-                    if (!string.IsNullOrEmpty(filter) && !bsName.ToLower().Contains(filter))
-                        continue;
+            EditorGUILayout.Space(2);
 
-                    bool  isPinned   = entry.BlendShapes.TryGetValue(bsName, out float storedVal);
-                    float displayVal = isPinned ? storedVal : _skinRenderer.GetBlendShapeWeight(i);
+            string filter = (entry.BlendShapeSearch ?? "").ToLower();
+            bool   dirty  = false;
 
-                    using (new EditorGUILayout.HorizontalScope())
-                    {
-                        // Pin checkbox — if checked this blendshape value is applied on outfit switch
-                        EditorGUI.BeginChangeCheck();
-                        bool nowPinned = EditorGUILayout.Toggle(isPinned, GUILayout.Width(16));
-                        if (EditorGUI.EndChangeCheck())
-                        {
-                            if (nowPinned) entry.BlendShapes[bsName] = displayVal;
-                            else           entry.BlendShapes.Remove(bsName);
-                            dirty = true;
-                        }
+            for (int i = 0; i < bsCount; i++)
+            {
+                string bsName = mesh.GetBlendShapeName(i);
 
-                        // Slider — active only when pinned
-                        using (new EditorGUI.DisabledScope(!isPinned))
-                        {
-                            EditorGUI.BeginChangeCheck();
-                            float newVal = EditorGUILayout.Slider(bsName, displayVal, 0f, 100f);
-                            if (EditorGUI.EndChangeCheck() && isPinned)
-                            {
-                                entry.BlendShapes[bsName] = newVal;
-                                dirty = true;
-                            }
-                        }
-                    }
+                if (!string.IsNullOrEmpty(filter) && !bsName.ToLower().Contains(filter))
+                    continue;
+
+                bool  isPinned   = entry.BlendShapes.TryGetValue(bsName, out float storedVal);
+                float displayVal = isPinned ? storedVal : _skinRenderer.GetBlendShapeWeight(i);
+
+                // Draw toggle + slider on the same row without IndentLevelScope
+                // (IndentLevelScope shifts visuals but not click rects, causing misses)
+                Rect rowRect = EditorGUILayout.GetControlRect(false, 18f);
+
+                // Checkbox — 20px on the left
+                Rect toggleRect = new Rect(rowRect.x, rowRect.y, 20f, rowRect.height);
+                bool nowPinned  = GUI.Toggle(toggleRect, isPinned, GUIContent.none);
+                if (nowPinned != isPinned)
+                {
+                    if (nowPinned) entry.BlendShapes[bsName] = displayVal;
+                    else           entry.BlendShapes.Remove(bsName);
+                    dirty = true;
                 }
 
-                if (dirty) SaveBlendShapes(entry);
-
-                // Clear all button
-                if (configuredCount > 0)
+                // Slider fills the rest of the row
+                Rect sliderRect = new Rect(rowRect.x + 22f, rowRect.y, rowRect.width - 22f, rowRect.height);
+                using (new EditorGUI.DisabledScope(!nowPinned))
                 {
-                    EditorGUILayout.Space(2);
-                    if (GUILayout.Button("Clear all overrides", EditorStyles.miniButton))
+                    float newVal = GUI.HorizontalSlider(
+                        new Rect(sliderRect.x + sliderRect.width - 120f, sliderRect.y + 2f, 100f, sliderRect.height - 4f),
+                        displayVal, 0f, 100f);
+
+                    // Label with name + value
+                    GUI.Label(new Rect(sliderRect.x, sliderRect.y, sliderRect.width - 124f, sliderRect.height),
+                        bsName, EditorStyles.label);
+                    GUI.Label(new Rect(sliderRect.x + sliderRect.width - 18f, sliderRect.y, 18f, sliderRect.height),
+                        Mathf.RoundToInt(displayVal).ToString(), EditorStyles.miniLabel);
+
+                    if (nowPinned && Math.Abs(newVal - displayVal) > 0.001f)
                     {
-                        entry.BlendShapes.Clear();
-                        SaveBlendShapes(entry);
+                        entry.BlendShapes[bsName] = newVal;
+                        dirty = true;
                     }
+                }
+            }
+
+            if (dirty) { SaveBlendShapes(entry); Repaint(); }
+
+            // Clear all button
+            if (configuredCount > 0)
+            {
+                EditorGUILayout.Space(2);
+                if (GUILayout.Button("Clear all overrides", EditorStyles.miniButton))
+                {
+                    entry.BlendShapes.Clear();
+                    SaveBlendShapes(entry);
+                    Repaint();
                 }
             }
         }
