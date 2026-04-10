@@ -7,10 +7,14 @@ A Unity Editor tool for VRChat avatar creators who manage multiple outfits under
 - Detects all outfit GameObjects under a configurable **Outfits** parent in your scene
 - For each outfit: switches tags (`Untagged` / `EditorOnly`), toggles `SetActive`, and sets the correct `PipelineManager` blueprint ID
 - Applies **per-outfit blendshape overrides** on the avatar skin mesh (useful for heels offsets, body shape adjustments, etc.)
-- **Batch uploads** all configured outfits in sequence using the VRC SDK build pipeline
+- **Cross-Platform Batching:** Groups outfits by target platform (Windows, Android, iOS) to minimize Unity platform switching.
+- **Domain Reload Survival:** Safely pauses and automatically resumes the upload queue across Unity platform switches and script recompilations.
+- **Avatar Versioning:** Set a base version number that is saved to your project and automatically stamped into the VRChat description of every uploaded outfit.
+- **Visual Feedback:** Platform-specific colored progress bars (Blue/Green/Silver) with sub-step progress tracking during the build and upload phases.
 - Asks for ownership confirmation once at the start — no repeated SDK consent dialogs mid-batch
 - Plays a sound when all uploads are done
 - Restores blendshape values to their original state after the batch completes
+- **Robust Safety Checks:** Automatically verifies VRChat SDK login status and confirms platform targets before building to prevent errors.
 
 ## Requirements
 
@@ -31,7 +35,8 @@ The tool works in any VRChat avatar project that has the Avatar SDK installed.
 2. **Avatar skin** — the SkinnedMeshRenderer with blendshapes (auto-detected)
 3. **Outfits parent** — name of the GameObject that contains all outfit prefabs as direct children (default: `Outfits`)
 4. For each outfit, paste its **Blueprint ID** (`avtr_...`) — this is saved per-machine in EditorPrefs
-5. Use **"Capture current skin values"** inside each outfit's blendshape foldout to save the current skin state as that outfit's overrides
+5. **Base Version** — (Optional) Enter a version number (e.g., `v1.2`) to automatically append it to the description of all uploaded outfits.
+6. Use **"Capture current skin values"** inside each outfit's blendshape foldout to save the current skin state as that outfit's overrides
 
 ## Usage
 

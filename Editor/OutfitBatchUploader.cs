@@ -12,6 +12,7 @@
 // ============================================================
 
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -39,10 +40,21 @@ namespace ShiroTools
         private const string DEFAULT_PARENT_NAME = "Outfits";
         private const string SOUND_ASSET_PATH    = "Assets/ShiroTools/Editor/Sounds/UI Confirm Sound.mp3";
 
+        private const string SESSION_BATCH_ACTIVE = "Shiro_BatchActive";
+        private const string SESSION_BATCH_QUEUE  = "Shiro_BatchQueue";
+        private const string SESSION_BATCH_TOTAL  = "Shiro_BatchTotal";
+        private const string SESSION_BATCH_INDEX  = "Shiro_BatchIndex";
+        private const string SESSION_SKIPPED      = "Shiro_BatchSkipped";
+        private const string SESSION_INITIAL_PLATFORM = "Shiro_InitialPlatform";
+        private const string SESSION_FINAL_STATUS_MSG = "Shiro_FinalStatusMsg";
+        private const string SESSION_FINAL_STATUS_TYPE = "Shiro_FinalStatusType";
+        private const string SESSION_PLAY_SOUND_ON_WAKE = "Shiro_PlaySoundOnWake";
+        private const string SESSION_BATCH_VERSION = "Shiro_BatchVersion";
+
         // ---- State ----
-        private GameObject           _avatarRoot;
+        [SerializeField] private GameObject _avatarRoot;
         private List<GameObject>     _avatarsInScene   = new List<GameObject>();
-        private SkinnedMeshRenderer  _skinRenderer;
+        [SerializeField] private SkinnedMeshRenderer _skinRenderer;
         private GameObject           _outfitsParent;
         private List<OutfitEntry>    _outfits          = new List<OutfitEntry>();
         private string               _outfitsParentName = DEFAULT_PARENT_NAME;
@@ -51,6 +63,8 @@ namespace ShiroTools
         private bool               _isBatchUploading;
         private int                _batchIndex;
         private int                _batchTotal;
+        private float              _batchSubProgress;
+        private string             _avatarVersion    = "";
         private string             _statusMessage    = "";
         private MessageType        _statusType       = MessageType.Info;
         private CancellationTokenSource _cts;
@@ -76,6 +90,18 @@ namespace ShiroTools
             _soundEnabled      = EditorPrefs.GetBool(PREFS_SOUND_ENABLED, true);
             ScanScene();
             EditorSceneManager.sceneOpened += OnSceneOpened;
+
+            // Resume batch if we just woke up from a Domain Reload (e.g. after a platform switch)
+            if (SessionState.GetBool(SESSION_BATCH_ACTIVE, false))
+            {
+                _isBatchUploading = true;
+                EditorApplication.update += HandleResumeBatch;
+            }
+            // Check for a finished batch status after a domain reload
+            else if (SessionState.GetBool(SESSION_PLAY_SOUND_ON_WAKE, false) || !string.IsNullOrEmpty(SessionState.GetString(SESSION_FINAL_STATUS_MSG, "")))
+            {
+                EditorApplication.update += HandleFinishedBatch;
+            }
         }
 
         private void OnDisable()
@@ -88,6 +114,53 @@ namespace ShiroTools
             ScanScene();
             Repaint();
         }
+
+        private void HandleResumeBatch()
+        {
+            // Wait until Unity is fully settled after the Domain Reload
+            if (EditorApplication.isCompiling || EditorApplication.isUpdating) return;
+            
+            // Wait for VRC SDK Builder to re-initialize
+            if (!VRCSdkControlPanel.TryGetBuilder<IVRCSdkAvatarBuilderApi>(out _)) return;
+
+            // NEW: Wait for user to be logged in before resuming
+            if (!APIUser.IsLoggedIn)
+            {
+                SetStatus("Waiting for VRChat SDK login...", MessageType.Info);
+                Repaint();
+                return;
+            }
+
+            EditorApplication.update -= HandleResumeBatch;
+            _cts = new CancellationTokenSource();
+            _ = ProcessBatchQueueAsync();
+        }
+
+        private void HandleFinishedBatch()
+        {
+            // Wait until Unity is fully settled after the Domain Reload
+            if (EditorApplication.isCompiling || EditorApplication.isUpdating) return;
+
+            EditorApplication.update -= HandleFinishedBatch;
+
+            string finalStatus = SessionState.GetString(SESSION_FINAL_STATUS_MSG, "");
+            if (!string.IsNullOrEmpty(finalStatus))
+            {
+                MessageType finalType = (MessageType)SessionState.GetInt(SESSION_FINAL_STATUS_TYPE, (int)MessageType.Info);
+                SetStatus(finalStatus, finalType);
+                SessionState.EraseString(SESSION_FINAL_STATUS_MSG);
+                SessionState.EraseInt(SESSION_FINAL_STATUS_TYPE);
+            }
+
+            if (SessionState.GetBool(SESSION_PLAY_SOUND_ON_WAKE, false))
+            {
+                PlayConfirmSound();
+                SessionState.EraseBool(SESSION_PLAY_SOUND_ON_WAKE);
+            }
+    
+            Repaint();
+        }
+
 
         // ============================================================
         //  Scene scanning
@@ -115,6 +188,7 @@ namespace ShiroTools
             {
                 AutoDetectSkin();
                 RebuildOutfitList();
+                LoadAvatarVersion();
             }
         }
 
@@ -122,6 +196,8 @@ namespace ShiroTools
         /// and has blendshapes — typically the body/skin mesh.</summary>
         private void AutoDetectSkin()
         {
+            // If already set and saved via SerializeField, don't overwrite
+            if (_skinRenderer != null) return; 
             if (_avatarRoot == null) { _skinRenderer = null; return; }
 
             // Prefer a direct child with blendshapes named "Body" or similar
@@ -163,6 +239,8 @@ namespace ShiroTools
 
             // Scope prefs key by avatar name so two avatars with same outfit names don't clash
             string avatarKey = _avatarRoot.name;
+            string projKey = Hash128.Compute(Application.dataPath).ToString();
+            
             foreach (Transform child in _outfitsParent.transform)
             {
                 string prefKey = PREFS_PREFIX + avatarKey + "_" + child.gameObject.name;
@@ -172,6 +250,9 @@ namespace ShiroTools
                     Name           = child.gameObject.name,
                     BlueprintId    = EditorPrefs.GetString(prefKey, ""),
                     IncludeInBatch = EditorPrefs.GetBool(prefKey + "_batch", true),
+                    BuildWindows   = EditorPrefs.GetBool(prefKey + "_" + projKey + "_Win", true),
+                    BuildAndroid   = EditorPrefs.GetBool(prefKey + "_" + projKey + "_And", false),
+                    BuildIOS       = EditorPrefs.GetBool(prefKey + "_" + projKey + "_iOS", false),
                     PrefsKey       = prefKey
                 };
                 LoadBlendShapes(entry);
@@ -186,6 +267,27 @@ namespace ShiroTools
                 if (child.name == name) return child;
                 var found = FindDeepChild(child, name);
                 if (found != null) return found;
+            }
+            return null;
+        }
+
+        private void LoadAvatarVersion()
+        {
+            _avatarVersion = "";
+            string mainId = GetMainBlueprintId();
+            if (!string.IsNullOrEmpty(mainId))
+            {
+                _avatarVersion = AvatarVersionManager.GetVersion(mainId);
+            }
+        }
+
+        private string GetMainBlueprintId()
+        {
+            if (_avatarRoot == null) return null;
+            var pm = _avatarRoot.GetComponent<PipelineManager>();
+            if (pm != null && !string.IsNullOrWhiteSpace(pm.blueprintId))
+            {
+                return pm.blueprintId;
             }
             return null;
         }
@@ -251,6 +353,7 @@ namespace ShiroTools
                         _avatarRoot = picked;
                         AutoDetectSkin();
                         RebuildOutfitList();
+                        LoadAvatarVersion();
                     }
                 }
 
@@ -274,6 +377,7 @@ namespace ShiroTools
                                 _avatarRoot = av;
                                 AutoDetectSkin();
                                 RebuildOutfitList();
+                                LoadAvatarVersion();
                             }
                         }
                     }
@@ -305,6 +409,22 @@ namespace ShiroTools
                 {
                     EditorPrefs.SetString(PREFS_PARENT_NAME, _outfitsParentName);
                     RebuildOutfitList();
+                }
+            }
+
+            // Row 5: Version
+            string mainId = GetMainBlueprintId();
+            if (!string.IsNullOrEmpty(mainId))
+            {
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    EditorGUILayout.LabelField("Base Version:", GUILayout.Width(82));
+                    EditorGUI.BeginChangeCheck();
+                    _avatarVersion = EditorGUILayout.TextField(_avatarVersion);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        AvatarVersionManager.SetVersion(mainId, _avatarVersion);
+                    }
                 }
             }
         }
@@ -375,7 +495,7 @@ namespace ShiroTools
                         if (GUILayout.Button("Upload", GUILayout.Width(56)))
                         {
                             ActivateOutfit(entry);
-                            _ = UploadSingleAsync(entry);
+                            _ = StartBatchAsync(new List<OutfitEntry> { entry });
                         }
                     }
                 }
@@ -384,9 +504,23 @@ namespace ShiroTools
                 using (new EditorGUILayout.HorizontalScope())
                 {
                     EditorGUI.BeginChangeCheck();
-                    entry.IncludeInBatch = EditorGUILayout.ToggleLeft("Include in batch upload", entry.IncludeInBatch);
+                    entry.IncludeInBatch = EditorGUILayout.ToggleLeft("Include in batch upload", entry.IncludeInBatch, GUILayout.Width(160));
                     if (EditorGUI.EndChangeCheck())
                         EditorPrefs.SetBool(entry.PrefsKey + "_batch", entry.IncludeInBatch);
+                    
+                    GUILayout.FlexibleSpace();
+                    
+                    EditorGUI.BeginChangeCheck();
+                    entry.BuildWindows = EditorGUILayout.ToggleLeft("Win", entry.BuildWindows, GUILayout.Width(45));
+                    entry.BuildAndroid = EditorGUILayout.ToggleLeft("And", entry.BuildAndroid, GUILayout.Width(45));
+                    entry.BuildIOS     = EditorGUILayout.ToggleLeft("iOS", entry.BuildIOS, GUILayout.Width(40));
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        string projKey = Hash128.Compute(Application.dataPath).ToString();
+                        EditorPrefs.SetBool(entry.PrefsKey + "_" + projKey + "_Win", entry.BuildWindows);
+                        EditorPrefs.SetBool(entry.PrefsKey + "_" + projKey + "_And", entry.BuildAndroid);
+                        EditorPrefs.SetBool(entry.PrefsKey + "_" + projKey + "_iOS", entry.BuildIOS);
+                    }
                 }
 
                 // Row 4: blendshape foldout
@@ -535,21 +669,47 @@ namespace ShiroTools
                 {
                     using (new EditorGUI.DisabledScope(ready == 0))
                     {
+                        Color oldColor = GUI.backgroundColor;
+                        bool isSuccess = _statusMessage.StartsWith("Queue complete") && _statusType == MessageType.Info;
+                        if (isSuccess) GUI.backgroundColor = new Color(0.2f, 0.8f, 0.2f);
+
                         if (GUILayout.Button($"Batch Upload All ({ready})", GUILayout.Height(30)))
                         {
-                            _cts = new CancellationTokenSource();
-                            _ = BatchUploadAsync(_cts.Token);
+                            var batch = _outfits.Where(o => o.IncludeInBatch && !string.IsNullOrWhiteSpace(o.BlueprintId)).ToList();
+                            _ = StartBatchAsync(batch);
                         }
+
+                        GUI.backgroundColor = oldColor;
                     }
                 }
                 else
                 {
-                    float progress = _batchTotal > 0 ? (float)_batchIndex / _batchTotal : 0f;
+                    float progress = _batchTotal > 0 ? ((float)_batchIndex + _batchSubProgress) / _batchTotal : 0f;
                     Rect r = EditorGUILayout.GetControlRect(GUILayout.Height(30), GUILayout.ExpandWidth(true));
-                    EditorGUI.ProgressBar(r, progress, $"Uploading {_batchIndex + 1} / {_batchTotal}…");
+
+                    // Determine current platform from queue to tint progress bar
+                    VRCPlatform currentPlat = GetCurrentPlatform();
+                    string queueStr = SessionState.GetString(SESSION_BATCH_QUEUE, "");
+                    if (!string.IsNullOrEmpty(queueStr))
+                    {
+                        string[] parts = queueStr.Split('\n')[0].Split('|');
+                        if (parts.Length >= 3 && Enum.TryParse(parts[2], out VRCPlatform parsedPlat))
+                            currentPlat = parsedPlat;
+                    }
+
+                    Color oldColor = GUI.color;
+                    if (currentPlat == VRCPlatform.Android) GUI.color = new Color(0.65f, 1.0f, 0.65f); // Brighter Green
+                    if (currentPlat == VRCPlatform.iOS)     GUI.color = new Color(0.8f, 0.85f, 0.9f);   // Light Silver-Blue
+                    if (currentPlat == VRCPlatform.Windows) GUI.color = new Color(0.65f, 0.85f, 1.0f); // Brighter Blue
+
+                    EditorGUI.ProgressBar(r, progress, $"Uploading {_batchIndex + 1} / {_batchTotal} ({currentPlat})…");
+                    GUI.color      = oldColor;
 
                     if (GUILayout.Button("Cancel", GUILayout.Width(66), GUILayout.Height(30)))
+                    {
                         _cts?.Cancel();
+                        CancelBatch();
+                    }
                 }
             }
 
@@ -745,68 +905,53 @@ namespace ShiroTools
             EditorApplication.Step();
         }
 
-        // ---- Single upload ----
-        private async Task UploadSingleAsync(OutfitEntry outfit)
+        // ---- Platform switching helpers ----
+        private VRCPlatform GetCurrentPlatform()
         {
-            if (_avatarRoot == null)                           { SetStatus("No avatar root.", MessageType.Error); return; }
-            if (string.IsNullOrWhiteSpace(outfit.BlueprintId)) { SetStatus("No Blueprint ID set.", MessageType.Error); return; }
-
-            _isBatchUploading = true;
-            _batchIndex = 0; _batchTotal = 1;
-            SetStatus($"Activating {outfit.Name}…", MessageType.Info);
-            Repaint();
-
-            try
-            {
-                if (!VRCSdkControlPanel.TryGetBuilder<IVRCSdkAvatarBuilderApi>(out var builder))
-                {
-                    SetStatus("VRC SDK builder not available — open the VRChat SDK window first.", MessageType.Error);
-                    return;
-                }
-
-                // Ask once for ownership confirmation, then pre-register consent with VRChat API
-                bool consented = await PreConsentAllAsync(new[] { outfit.BlueprintId });
-                if (!consented) { SetStatus("Upload cancelled — ownership not confirmed.", MessageType.Warning); return; }
-
-                // Only activate if not already correctly set (user may have done it manually)
-                bool alreadyActive = outfit.Go != null &&
-                                     outfit.Go.activeSelf &&
-                                     outfit.Go.CompareTag("Untagged");
-                if (!alreadyActive)
-                {
-                    ActivateOutfit(outfit);
-                    FlushScene();
-                    await Task.Delay(1200);
-                }
-
-                SetStatus($"Uploading {outfit.Name}…", MessageType.Info);
-                Repaint();
-
-                var avatar = await VRCApi.GetAvatar(outfit.BlueprintId);
-                await builder.BuildAndUpload(_avatarRoot, avatar);
-
-                SetStatus($"✓ Uploaded: {outfit.Name}", MessageType.Info);
-            }
-            catch (Exception ex)
-            {
-                SetStatus($"Upload failed: {ex.Message}", MessageType.Error);
-                Debug.LogError($"[OutfitBatchUploader] Single upload error for '{outfit.Name}': {ex}");
-            }
-            finally
-            {
-                _isBatchUploading = false;
-                Repaint();
-            }
+            var target = EditorUserBuildSettings.activeBuildTarget;
+            if (target == BuildTarget.Android) return VRCPlatform.Android;
+            if (target == BuildTarget.iOS) return VRCPlatform.iOS;
+            return VRCPlatform.Windows;
         }
 
-        // ---- Batch upload ----
-        private async Task BatchUploadAsync(CancellationToken ct)
+        private bool SwitchPlatform(VRCPlatform plat)
         {
-            var batch = _outfits
-                .Where(o => o.IncludeInBatch && !string.IsNullOrWhiteSpace(o.BlueprintId))
-                .ToList();
+            BuildTargetGroup group = BuildTargetGroup.Standalone;
+            BuildTarget target = BuildTarget.StandaloneWindows64;
+            
+            switch (plat)
+            {
+                case VRCPlatform.Android:
+                    group = BuildTargetGroup.Android;
+                    target = BuildTarget.Android;
+                    break;
+                case VRCPlatform.iOS:
+                    group = BuildTargetGroup.iOS;
+                    target = BuildTarget.iOS;
+                    break;
+                case VRCPlatform.Windows:
+                    group = BuildTargetGroup.Standalone;
+                    target = BuildTarget.StandaloneWindows64;
+                    break;
+            }
+            
+            if (!BuildPipeline.IsBuildTargetSupported(group, target))
+            {
+                Debug.LogError($"[OutfitBatchUploader] Build target {target} is not supported or not installed.");
+                return false;
+            }
 
-            if (batch.Count == 0) return;
+            if (EditorUserBuildSettings.activeBuildTarget != target)
+            {
+                EditorUserBuildSettings.SwitchActiveBuildTarget(group, target);
+            }
+            return true;
+        }
+
+        // ---- Cross-Domain Batch Queue System ----
+        private async Task StartBatchAsync(List<OutfitEntry> targetOutfits)
+        {
+            if (targetOutfits.Count == 0) return;
 
             if (!VRCSdkControlPanel.TryGetBuilder<IVRCSdkAvatarBuilderApi>(out var builder))
             {
@@ -814,155 +959,366 @@ namespace ShiroTools
                 return;
             }
 
-            // Ask ONCE for all outfits — pre-registers consent so SDK dialog never appears mid-batch
-            bool consented = await PreConsentAllAsync(batch.Select(o => o.BlueprintId));
-            if (!consented)
+            // NEW: Check for login before starting
+            if (!APIUser.IsLoggedIn)
             {
-                SetStatus("Batch cancelled — ownership not confirmed.", MessageType.Warning);
+                SetStatus("Not logged in. Please open the VRChat SDK Control Panel and log in first.", MessageType.Error);
                 return;
             }
 
-            // Snapshot current blendshape values so we can restore them after the batch
-            Dictionary<string, float> blendShapeSnapshot = null;
-            if (_skinRenderer != null && _skinRenderer.sharedMesh != null)
+            var ids = targetOutfits.Select(o => o.BlueprintId).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct();
+            bool consented = await PreConsentAllAsync(ids);
+            if (!consented)
             {
-                blendShapeSnapshot = new Dictionary<string, float>();
-                var mesh = _skinRenderer.sharedMesh;
-                for (int i = 0; i < mesh.blendShapeCount; i++)
-                    blendShapeSnapshot[mesh.GetBlendShapeName(i)] = _skinRenderer.GetBlendShapeWeight(i);
+                SetStatus("Upload cancelled — ownership not confirmed.", MessageType.Warning);
+                return;
             }
+
+            // Build a flat queue of operations grouped by platform
+            var queue = new List<string>();
+            var platformOrder = new List<VRCPlatform> { VRCPlatform.Windows, VRCPlatform.Android, VRCPlatform.iOS };
+            
+            VRCPlatform currentPlatform = GetCurrentPlatform();
+            if (platformOrder.Contains(currentPlatform))
+            {
+                platformOrder.Remove(currentPlatform);
+                platformOrder.Insert(0, currentPlatform); // Start with current platform to minimize switching
+            }
+
+            foreach (var plat in platformOrder)
+            {
+                foreach (var outfit in targetOutfits)
+                {
+                    bool buildsForPlat = 
+                        (plat == VRCPlatform.Windows && outfit.BuildWindows) ||
+                        (plat == VRCPlatform.Android && outfit.BuildAndroid) ||
+                        (plat == VRCPlatform.iOS && outfit.BuildIOS);
+
+                    // Fallback: if no platforms selected for this outfit, build on the current active platform
+                    bool hasAny = outfit.BuildWindows || outfit.BuildAndroid || outfit.BuildIOS;
+                    if (!hasAny && plat == currentPlatform) buildsForPlat = true;
+
+                    if (buildsForPlat)
+                    {
+                        queue.Add($"{outfit.Name}|{outfit.BlueprintId}|{plat}");
+                    }
+                }
+            }
+
+            if (queue.Count == 0)
+            {
+                SetStatus("No platforms configured for the target outfits.", MessageType.Warning);
+                return;
+            }
+
+            SaveBlendshapeSnapshot();
+
+            // Save queue into Domain-Reload-proof SessionState
+            SessionState.SetString(SESSION_BATCH_QUEUE, string.Join("\n", queue));
+            SessionState.SetInt(SESSION_BATCH_TOTAL, queue.Count);
+            SessionState.SetInt(SESSION_BATCH_INDEX, 0);
+            SessionState.SetBool(SESSION_BATCH_ACTIVE, true);
+            SessionState.SetString(SESSION_SKIPPED, "");
+            SessionState.SetString(SESSION_INITIAL_PLATFORM, currentPlatform.ToString());
+            SessionState.SetString(SESSION_BATCH_VERSION, _avatarVersion); // Capture the version from UI
 
             _isBatchUploading = true;
-            _batchTotal       = batch.Count;
-            _batchIndex       = 0;
+            _cts = new CancellationTokenSource();
+            
+            _ = ProcessBatchQueueAsync();
+        }
 
-            int succeeded = 0;
-            var skipped   = new List<string>();
-
-            for (int i = 0; i < batch.Count; i++)
-            {
-                if (ct.IsCancellationRequested)
-                {
-                    SetStatus("Batch upload cancelled.", MessageType.Warning);
-                    break;
-                }
-
-                var outfit = batch[i];
-                _batchIndex = i;
-
-                try
-                {
-                    // Step 1 — activate outfit if not already correctly set by the user
-                    bool alreadyActive = outfit.Go != null &&
-                                        outfit.Go.activeSelf &&
-                                        outfit.Go.CompareTag("Untagged");
-
-                    if (alreadyActive)
-                    {
-                        SetStatus($"[{i + 1}/{batch.Count}] {outfit.Name} already active — skipping switch.", MessageType.Info);
-                        Repaint();
-                    }
-                    else
-                    {
-                        SetStatus($"[{i + 1}/{batch.Count}] Activating {outfit.Name}…", MessageType.Info);
-                        Repaint();
-                        ActivateOutfit(outfit);
-                        FlushScene();
-                        await Task.Delay(1500, ct);
-                    }
-
-                    // Step 2 — upload
-                    SetStatus($"[{i + 1}/{batch.Count}] Uploading {outfit.Name}…", MessageType.Info);
-                    Repaint();
-
-                    var avatar = await VRCApi.GetAvatar(outfit.BlueprintId, cancellationToken: ct);
-                    await builder.BuildAndUpload(_avatarRoot, avatar, cancellationToken: ct);
-
-                    succeeded++;
-                    SetStatus($"[{i + 1}/{batch.Count}] ✓ Done: {outfit.Name}", MessageType.Info);
-                    Repaint();
-
-                    // Brief pause between uploads so VRChat API isn't hammered
-                    if (i < batch.Count - 1)
-                        await Task.Delay(2000, ct);
-                }
-                catch (OperationCanceledException)
-                {
-                    SetStatus("Batch upload cancelled.", MessageType.Warning);
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    // Check if this is a known validation error (e.g. missing bones) — if so, auto-skip
-                    bool isValidation = ex.GetType().Name.Contains("Validation") ||
-                                        ex.Message.Contains("bone") ||
-                                        ex.Message.Contains("Bone") ||
-                                        ex.Message.Contains("rig") ||
-                                        ex.Message.Contains("humanoid") ||
-                                        ex.Message.Contains("Chest") ||
-                                        ex.Message.Contains("validation") ||
-                                        ex.Message.Contains("Validation");
-
-                    string shortMsg = ex.Message.Length > 120 ? ex.Message.Substring(0, 120) + "…" : ex.Message;
-                    string logMsg   = $"[OutfitBatchUploader] '{outfit.Name}' failed: {ex}";
-
-                    if (isValidation)
-                    {
-                        // Auto-skip validation errors and continue — log to console
-                        skipped.Add($"{outfit.Name}  ({shortMsg})");
-                        Debug.LogWarning(logMsg);
-                        SetStatus($"⚠ Skipped {outfit.Name} — validation error (see Console)", MessageType.Warning);
-                        Repaint();
-                        await Task.Delay(800, CancellationToken.None);
-                    }
-                    else
-                    {
-                        // Unknown error — ask whether to continue
-                        SetStatus($"Error on {outfit.Name}: {shortMsg}", MessageType.Error);
-                        Debug.LogError(logMsg);
-
-                        bool cont = EditorUtility.DisplayDialog(
-                            "Upload Failed",
-                            $"Upload failed for '{outfit.Name}':\n{shortMsg}\n\nContinue with remaining outfits?",
-                            "Continue", "Stop");
-                        if (!cont) break;
-                    }
-                }
-            }
-
-            // Final summary
-            string summary = $"Batch complete — {succeeded}/{batch.Count} uploaded.";
-            if (skipped.Count > 0)
-                summary += $"\n\nSkipped ({skipped.Count}) due to validation errors:\n• " +
-                           string.Join("\n• ", skipped) +
-                           "\n\nFix the missing bones on those outfits and upload them separately.";
-
-            // Restore blendshapes to the values they had before the batch started
-            if (blendShapeSnapshot != null && _skinRenderer != null && _skinRenderer.sharedMesh != null)
-            {
-                Undo.RecordObject(_skinRenderer, "Restore blendshapes after batch upload");
-                var mesh = _skinRenderer.sharedMesh;
-                foreach (var kv in blendShapeSnapshot)
-                {
-                    int idx = mesh.GetBlendShapeIndex(kv.Key);
-                    if (idx >= 0)
-                        _skinRenderer.SetBlendShapeWeight(idx, kv.Value);
-                }
-                EditorUtility.SetDirty(_skinRenderer);
-                EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
-            }
-
-            SetStatus(summary, skipped.Count > 0 ? MessageType.Warning : MessageType.Info);
-            _isBatchUploading = false;
-            _batchIndex       = _batchTotal;
+        private async Task ProcessBatchQueueAsync()
+        {
+            if (!SessionState.GetBool(SESSION_BATCH_ACTIVE, false)) return;
+            _isBatchUploading = true;
             Repaint();
 
-            if (skipped.Count > 0)
+            try
+            {
+                while (true)
+                {
+                    if (_cts != null && _cts.IsCancellationRequested)
+                    {
+                        CancelBatch();
+                        return;
+                    }
+
+                    string queueStr = SessionState.GetString(SESSION_BATCH_QUEUE, "");
+                    if (string.IsNullOrWhiteSpace(queueStr))
+                    {
+                        FinishBatch();
+                        return;
+                    }
+
+                    var queue = queueStr.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).ToList();
+                    int total = SessionState.GetInt(SESSION_BATCH_TOTAL, 0);
+                    int currentIndex = SessionState.GetInt(SESSION_BATCH_INDEX, 0);
+
+                    _batchIndex = currentIndex;
+                    _batchTotal = total;
+                    _batchSubProgress = 0.0f;
+
+                    string[] parts = queue[0].Split('|');
+                    string outfitName = parts[0];
+                    string blueprintId = parts[1];
+                    VRCPlatform platform = (VRCPlatform)Enum.Parse(typeof(VRCPlatform), parts[2]);
+
+                    if (platform != GetCurrentPlatform())
+                    {
+                        SetStatus($"Switching to {platform} for {outfitName}...", MessageType.Info);
+                        _batchSubProgress = 0.1f;
+                        Repaint();
+                        
+                        if (!SwitchPlatform(platform))
+                            throw new Exception($"Platform {platform} is not installed or supported.");
+                        
+                        // IMPORTANT: The Platform Switch forces a Unity Domain Reload here. 
+                        // All code execution is about to die. We wire up a backup hook to resume just in case 
+                        // the switch finishes instantaneously without a reload, then intentionally exit.
+                        EditorApplication.update += HandleResumeBatch;
+                        return; 
+                    }
+
+                    SetStatus($"[{currentIndex + 1}/{total}] Activating {outfitName} ({platform})...", MessageType.Info);
+                    _batchSubProgress = 0.2f;
+                    Repaint();
+
+                    var outfit = _outfits.FirstOrDefault(o => o.Name == outfitName);
+                    if (outfit == null)
+                    {
+                        // If outfit was deleted from scene mid-batch, skip and continue
+                        queue.RemoveAt(0);
+                        SessionState.SetString(SESSION_BATCH_QUEUE, string.Join("\n", queue));
+                        SessionState.SetInt(SESSION_BATCH_INDEX, currentIndex + 1);
+                        continue;
+                    }
+
+                    ActivateOutfit(outfit);
+                    FlushScene();
+                    _batchSubProgress = 0.3f;
+                    Repaint();
+                    await Task.Delay(1500, _cts.Token);
+
+                    // Double-check platform before upload safeguard
+                    if (GetCurrentPlatform() != platform)
+                    {
+                        throw new Exception($"Critical Safety Check Failed: Queue expected {platform}, but Unity is currently on {GetCurrentPlatform()}.");
+                    }
+
+                    // --- Build & Upload Phase ---
+                    SetStatus($"[{currentIndex + 1}/{total}] Building & Uploading {outfitName} ({platform})...", MessageType.Info);
+                    _batchSubProgress = 0.4f;
+                    Repaint();
+                    
+                    if (!VRCSdkControlPanel.TryGetBuilder<IVRCSdkAvatarBuilderApi>(out var builder))
+                        throw new Exception("SDK Builder not available.");
+                    
+                    var avatar = await VRCApi.GetAvatar(blueprintId, cancellationToken: _cts.Token);
+
+                    // Set avatar description to version number if it's different
+                    string versionToSet = SessionState.GetString(SESSION_BATCH_VERSION, ""); // Use the version captured at batch start
+
+                    // Only attempt to change the description if a version was actually typed in (not blank)
+                    if (!string.IsNullOrWhiteSpace(versionToSet))
+                    {
+                        if (avatar.Description != versionToSet)
+                        {
+                            avatar.Description = versionToSet;
+                            Debug.Log($"[OutfitBatchUploader] Updating '{outfitName}' description to version: {versionToSet}");
+                        }
+                        
+                        // Save it for this specific outfit's blueprint ID so it's remembered across projects!
+                        AvatarVersionManager.SetVersion(blueprintId, versionToSet);
+                    }
+
+                    await builder.BuildAndUpload(_avatarRoot, avatar, cancellationToken: _cts.Token);
+
+                    // Successful upload! Pop from queue
+                    _batchSubProgress = 1.0f;
+                    Repaint();
+                    queue.RemoveAt(0);
+                    SessionState.SetString(SESSION_BATCH_QUEUE, string.Join("\n", queue));
+                    SessionState.SetInt(SESSION_BATCH_INDEX, currentIndex + 1);
+
+                    if (queue.Count > 0)
+                        await Task.Delay(2000, _cts.Token);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                CancelBatch();
+            }
+            catch (Exception ex)
+            {
+                HandleBatchError(ex);
+            }
+        }
+
+        private void HandleBatchError(Exception ex)
+        {
+            string queueStr = SessionState.GetString(SESSION_BATCH_QUEUE, "");
+            if (string.IsNullOrWhiteSpace(queueStr)) { FinishBatch(); return; }
+
+            var queue = queueStr.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).ToList();
+            string[] parts = queue[0].Split('|');
+            string outfitName = parts[0];
+            VRCPlatform platform = (VRCPlatform)Enum.Parse(typeof(VRCPlatform), parts[2]);
+
+            bool isValidation = ex.GetType().Name.Contains("Validation") || 
+                                ex.Message.Contains("bone") || ex.Message.Contains("Bone") || 
+                                ex.Message.Contains("rig") || ex.Message.Contains("humanoid") || 
+                                ex.Message.Contains("Chest") || ex.Message.Contains("validation");
+
+            string shortMsg = ex.Message.Length > 120 ? ex.Message.Substring(0, 120) + "…" : ex.Message;
+            string logMsg   = $"[OutfitBatchUploader] '{outfitName}' ({platform}) failed: {ex}";
+
+            if (isValidation)
+            {
+                Debug.LogWarning(logMsg);
+                SetStatus($"⚠ Skipped {outfitName} — validation error (see Console)", MessageType.Warning);
+
+                string skipped = SessionState.GetString(SESSION_SKIPPED, "");
+                skipped += $"{outfitName} ({platform})\n";
+                SessionState.SetString(SESSION_SKIPPED, skipped);
+
+                PopQueueAndContinue(queue);
+            }
+            else
+            {
+                Debug.LogError(logMsg);
+                SetStatus($"Error on {outfitName}: {shortMsg}", MessageType.Error);
+
+                bool cont = EditorUtility.DisplayDialog(
+                    "Upload Failed",
+                    $"Upload failed for '{outfitName}' on {platform}:\n{shortMsg}\n\nContinue with remaining queue?",
+                    "Continue", "Stop");
+
+                if (cont)
+                    PopQueueAndContinue(queue);
+                else
+                    CancelBatch();
+            }
+        }
+
+        private void PopQueueAndContinue(List<string> queue)
+        {
+            queue.RemoveAt(0);
+            SessionState.SetString(SESSION_BATCH_QUEUE, string.Join("\n", queue));
+            int currentIndex = SessionState.GetInt(SESSION_BATCH_INDEX, 0);
+            SessionState.SetInt(SESSION_BATCH_INDEX, currentIndex + 1);
+
+            _ = ProcessBatchQueueAsync();
+        }
+
+        private void FinishBatch()
+        {
+            int total = SessionState.GetInt(SESSION_BATCH_TOTAL, 0);
+            string skippedStr = SessionState.GetString(SESSION_SKIPPED, "");
+            var skippedList = skippedStr.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+            int succeeded = total - skippedList.Length;
+            if (succeeded < 0) succeeded = 0;
+
+            string summary = $"Queue complete — {succeeded}/{total} uploads finished.";
+            if (skippedList.Length > 0)
+            {
+                summary += $"\n\nSkipped ({skippedList.Length}) due to validation errors:\n• " +
+                           string.Join("\n• ", skippedList) +
+                           "\n\nFix the issues on those outfits and upload them separately.";
+            }
+
+            var finalType = skippedList.Length > 0 || succeeded < total ? MessageType.Warning : MessageType.Info;
+            SessionState.SetString(SESSION_FINAL_STATUS_MSG, summary);
+            SessionState.SetInt(SESSION_FINAL_STATUS_TYPE, (int)finalType);
+
+            if (succeeded > 0 && succeeded == total)
+            {
+                SessionState.SetBool(SESSION_PLAY_SOUND_ON_WAKE, true);
+            }
+
+            RestoreBlendshapeSnapshot();
+
+            SessionState.SetBool(SESSION_BATCH_ACTIVE, false);
+            _isBatchUploading = false;
+            _batchIndex = _batchTotal;
+            
+            if (skippedList.Length > 0 || succeeded < total)
                 Debug.LogWarning($"[OutfitBatchUploader] {summary}");
 
-            // Play confirm sound only when every planned outfit was uploaded successfully
-            if (succeeded == batch.Count)
-                PlayConfirmSound();
+            if (!RestoreInitialPlatform())
+            {
+                // No domain reload is coming, so we can fire the handler logic immediately.
+                HandleFinishedBatch();
+            }
+            else
+            {
+                // A switch is coming. Clear the current status so it doesn't show a stale message before reload.
+                SetStatus("", MessageType.None);
+                Repaint();
+            }
+        }
+
+        private void CancelBatch()
+        {
+            SessionState.SetBool(SESSION_BATCH_ACTIVE, false);
+            _isBatchUploading = false;
+            RestoreBlendshapeSnapshot();
+            SetStatus("Batch upload cancelled.", MessageType.Warning);
+            Repaint();
+
+            RestoreInitialPlatform();
+        }
+
+        private bool RestoreInitialPlatform()
+        {
+            string initialPlatStr = SessionState.GetString(SESSION_INITIAL_PLATFORM, "");
+            if (string.IsNullOrEmpty(initialPlatStr)) return false;
+
+            bool switched = false;
+            if (Enum.TryParse(initialPlatStr, out VRCPlatform initialPlat) && initialPlat != GetCurrentPlatform())
+            {
+                SetStatus($"Restoring initial platform to {initialPlat}...", MessageType.Info);
+                Repaint();
+                SwitchPlatform(initialPlat);
+                switched = true;
+            }
+
+            SessionState.EraseString(SESSION_INITIAL_PLATFORM); // Clean up regardless
+            return switched;
+        }
+
+        private void SaveBlendshapeSnapshot()
+        {
+            if (_skinRenderer == null || _skinRenderer.sharedMesh == null) return;
+            var mesh = _skinRenderer.sharedMesh;
+            var snap = new List<string>();
+            for (int i = 0; i < mesh.blendShapeCount; i++)
+                snap.Add($"{mesh.GetBlendShapeName(i)}:{_skinRenderer.GetBlendShapeWeight(i)}");
+            SessionState.SetString("ShiroOutfit_BSSnap", string.Join("\n", snap));
+        }
+
+        private void RestoreBlendshapeSnapshot()
+        {
+            if (_skinRenderer == null || _skinRenderer.sharedMesh == null) return;
+            string snapStr = SessionState.GetString("ShiroOutfit_BSSnap", "");
+            if (string.IsNullOrEmpty(snapStr)) return;
+
+            Undo.RecordObject(_skinRenderer, "Restore blendshapes after batch");
+            var mesh = _skinRenderer.sharedMesh;
+            foreach (string line in snapStr.Split('\n'))
+            {
+                if (string.IsNullOrEmpty(line)) continue;
+                var parts = line.Split(':');
+                if (parts.Length == 2 && float.TryParse(parts[1], out float w))
+                {
+                    int idx = mesh.GetBlendShapeIndex(parts[0]);
+                    if (idx >= 0) _skinRenderer.SetBlendShapeWeight(idx, w);
+                }
+            }
+            EditorUtility.SetDirty(_skinRenderer);
+            EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+            SessionState.EraseString("ShiroOutfit_BSSnap");
         }
 
         // ============================================================
@@ -1024,11 +1380,101 @@ namespace ShiroTools
             public string                      Name;
             public string                      BlueprintId      = "";
             public bool                        IncludeInBatch   = true;
+            public bool                        BuildWindows     = true;
+            public bool                        BuildAndroid     = false;
+            public bool                        BuildIOS         = false;
             public string                      PrefsKey         = "";   // scoped by avatar name
             // Blendshape overrides: name → value (0-100). Only entries present here are applied.
             public Dictionary<string, float>   BlendShapes      = new Dictionary<string, float>();
             public bool                        BlendShapeExpanded = false;
             public string                      BlendShapeSearch   = "";
+        }
+
+        public enum VRCPlatform
+        {
+            Windows,
+            Android,
+            iOS
+        }
+    }
+
+    public static class AvatarVersionManager
+    {
+        private static readonly string ConfigPath;
+        private static Dictionary<string, string> _versions;
+
+        [Serializable]
+        private class VersionData
+        {
+            public List<VersionEntry> versions = new List<VersionEntry>();
+        }
+
+        [Serializable]
+        private class VersionEntry
+        {
+            public string blueprintId;
+            public string version;
+        }
+
+        static AvatarVersionManager()
+        {
+            // Save locally to this specific Unity project in the ProjectSettings folder
+            ConfigPath = Path.Combine("ProjectSettings", "ShiroOutfit_versions.json");
+            LoadVersions();
+        }
+
+        private static void LoadVersions()
+        {
+            _versions = new Dictionary<string, string>();
+            if (!File.Exists(ConfigPath)) return;
+
+            try
+            {
+                string json = File.ReadAllText(ConfigPath);
+                var data = JsonUtility.FromJson<VersionData>(json);
+                if (data?.versions != null)
+                {
+                    foreach (var entry in data.versions)
+                        if (!string.IsNullOrWhiteSpace(entry.blueprintId))
+                            _versions[entry.blueprintId] = entry.version;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[AvatarVersionManager] Failed to load versions: {ex.Message}");
+            }
+        }
+
+        private static void SaveVersions()
+        {
+            try
+            {
+                var data = new VersionData();
+                foreach (var kvp in _versions)
+                    data.versions.Add(new VersionEntry { blueprintId = kvp.Key, version = kvp.Value });
+                
+                string json = JsonUtility.ToJson(data, true);
+                Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath));
+                File.WriteAllText(ConfigPath, json);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[AvatarVersionManager] Failed to save versions: {ex.Message}");
+            }
+        }
+
+        public static string GetVersion(string blueprintId)
+        {
+            if (string.IsNullOrWhiteSpace(blueprintId)) return "";
+            _versions.TryGetValue(blueprintId, out string version);
+            return version ?? "";
+        }
+
+        public static void SetVersion(string blueprintId, string version)
+        {
+            if (string.IsNullOrWhiteSpace(blueprintId)) return;
+            _versions[blueprintId] = version;
+            SaveVersions();
         }
     }
 }
