@@ -31,7 +31,7 @@ using VRC.SDKBase.Editor.Api;   // VRCApi, VRCAvatar
 
 namespace ShiroTools
 {
-    public class OutfitBatchUploader : EditorWindow
+    public partial class OutfitBatchUploader : EditorWindow
     {
         // ---- Constants ----
         private const string PREFS_PREFIX        = "ShiroOutfitUploader_";
@@ -102,11 +102,16 @@ namespace ShiroTools
             {
                 EditorApplication.update += HandleFinishedBatch;
             }
+
+            // Resume a new-avatar (Express) upload if a domain reload interrupted it
+            TryResumeExpress();
         }
 
         private void OnDisable()
         {
             EditorSceneManager.sceneOpened -= OnSceneOpened;
+            EditorApplication.update -= HandleResumeExpress;
+            StopConsentWatcher();
         }
 
         private void OnSceneOpened(Scene scene, OpenSceneMode mode)
@@ -315,15 +320,28 @@ namespace ShiroTools
             }
 
             // ---- Outfit list ----
-            EditorGUILayout.LabelField(
-                $"Outfits ({_outfits.Count})  —  parent: \"{_outfitsParent.name}\"",
-                EditorStyles.boldLabel);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField(
+                    $"Outfits ({_outfits.Count})  —  parent: \"{_outfitsParent.name}\"",
+                    EditorStyles.boldLabel);
+                GUILayout.FlexibleSpace();
+                using (new EditorGUI.DisabledScope(_isBatchUploading || _isExpressBusy))
+                {
+                    EditorGUILayout.LabelField("Include in batch:", EditorStyles.miniLabel, GUILayout.Width(96));
+                    if (GUILayout.Button("All", EditorStyles.miniButton, GUILayout.Width(40)))  SetAllOutfitsIncluded(true);
+                    if (GUILayout.Button("None", EditorStyles.miniButton, GUILayout.Width(44))) SetAllOutfitsIncluded(false);
+                }
+            }
             EditorGUILayout.Space(4);
 
             _scroll = EditorGUILayout.BeginScrollView(_scroll, GUILayout.ExpandHeight(true));
             for (int i = 0; i < _outfits.Count; i++)
                 DrawOutfitRow(_outfits[i]);
             EditorGUILayout.EndScrollView();
+
+            DrawSeparator();
+            DrawNewOutfitSetupSection();
 
             DrawSeparator();
             DrawBatchSection();
@@ -446,6 +464,17 @@ namespace ShiroTools
                     MessageType.Warning);
         }
 
+        // ---- Select / deselect all outfits for batch ----
+        private void SetAllOutfitsIncluded(bool include)
+        {
+            foreach (var o in _outfits)
+            {
+                if (o == null) continue;
+                o.IncludeInBatch = include;
+                EditorPrefs.SetBool(o.PrefsKey + "_batch", include);
+            }
+        }
+
         // ---- Per-outfit row ----
         private void DrawOutfitRow(OutfitEntry entry)
         {
@@ -478,10 +507,14 @@ namespace ShiroTools
                             EditorGUIUtility.PingObject(entry.Go);
                             Selection.activeGameObject = entry.Go;
                         }
+
+                        if (GUILayout.Button(new GUIContent("VRAM", "Optimize this outfit's textures (compression + resolution)"), GUILayout.Width(50)))
+                            OptimizeOutfitTextures(entry);
                     }
                 }
 
                 // Row 2: Blueprint ID + Upload button
+                bool hasBlueprintId = !string.IsNullOrWhiteSpace(entry.BlueprintId);
                 using (new EditorGUILayout.HorizontalScope())
                 {
                     EditorGUILayout.LabelField("Blueprint ID:", GUILayout.Width(82));
@@ -490,15 +523,22 @@ namespace ShiroTools
                     if (EditorGUI.EndChangeCheck())
                         EditorPrefs.SetString(entry.PrefsKey, entry.BlueprintId);
 
-                    using (new EditorGUI.DisabledScope(_isBatchUploading || string.IsNullOrWhiteSpace(entry.BlueprintId)))
+                    if (hasBlueprintId)
                     {
-                        if (GUILayout.Button("Upload", GUILayout.Width(56)))
+                        using (new EditorGUI.DisabledScope(_isBatchUploading))
                         {
-                            ActivateOutfit(entry);
-                            _ = StartBatchAsync(new List<OutfitEntry> { entry });
+                            if (GUILayout.Button("Upload", GUILayout.Width(56)))
+                            {
+                                ActivateOutfit(entry);
+                                _ = StartBatchAsync(new List<OutfitEntry> { entry });
+                            }
                         }
                     }
                 }
+
+                // New outfit (no Blueprint ID yet) → inline first-time setup buttons
+                if (!hasBlueprintId)
+                    DrawInlineNewOutfitButtons(entry);
 
                 // Row 3: batch include toggle
                 using (new EditorGUILayout.HorizontalScope())
@@ -525,6 +565,11 @@ namespace ShiroTools
 
                 // Row 4: blendshape foldout
                 DrawBlendShapeFoldout(entry);
+
+                // Per-outfit contact budget + item (accessory) selection + FaceEmo
+                DrawContactCounter(entry);
+                DrawOutfitItems(entry);
+                DrawOutfitFaceEmo(entry);
             }
             EditorGUILayout.Space(2);
         }
@@ -583,6 +628,10 @@ namespace ShiroTools
             string filter = (entry.BlendShapeSearch ?? "").ToLower();
             bool   dirty  = false;
 
+            // Scrollable list so long blendshape lists don't overflow the window
+            entry.BlendShapeScroll = EditorGUILayout.BeginScrollView(
+                entry.BlendShapeScroll, GUILayout.Height(Mathf.Min(260f, Mathf.Max(1, bsCount) * 20f + 4f)));
+
             for (int i = 0; i < bsCount; i++)
             {
                 string bsName = mesh.GetBlendShapeName(i);
@@ -628,6 +677,7 @@ namespace ShiroTools
                     }
                 }
             }
+            EditorGUILayout.EndScrollView();
 
             if (dirty) { SaveBlendShapes(entry); Repaint(); }
 
@@ -647,7 +697,9 @@ namespace ShiroTools
         // ---- Batch section ----
         private void DrawBatchSection()
         {
-            int ready = _outfits.Count(o => o.IncludeInBatch && !string.IsNullOrWhiteSpace(o.BlueprintId));
+            int included  = _outfits.Count(o => o.IncludeInBatch);
+            int ready     = _outfits.Count(o => o.IncludeInBatch && !string.IsNullOrWhiteSpace(o.BlueprintId));
+            int needSetup = included - ready;
 
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -659,7 +711,9 @@ namespace ShiroTools
                     EditorPrefs.SetBool(PREFS_SOUND_ENABLED, _soundEnabled);
             }
             EditorGUILayout.LabelField(
-                $"{ready} outfit(s) ready  (have a Blueprint ID + \"Include in batch\" checked)",
+                needSetup > 0
+                    ? $"{included} selected — {ready} ready, {needSetup} need setup (you'll be asked to Express / configure them first)"
+                    : $"{ready} outfit(s) ready  (have a Blueprint ID + \"Include in batch\" checked)",
                 EditorStyles.miniLabel);
             EditorGUILayout.Space(4);
 
@@ -667,16 +721,19 @@ namespace ShiroTools
             {
                 if (!_isBatchUploading)
                 {
-                    using (new EditorGUI.DisabledScope(ready == 0))
+                    using (new EditorGUI.DisabledScope(included == 0 || _isExpressBusy))
                     {
                         Color oldColor = GUI.backgroundColor;
                         bool isSuccess = _statusMessage.StartsWith("Queue complete") && _statusType == MessageType.Info;
                         if (isSuccess) GUI.backgroundColor = new Color(0.2f, 0.8f, 0.2f);
 
-                        if (GUILayout.Button($"Batch Upload All ({ready})", GUILayout.Height(30)))
+                        string btnLabel = needSetup > 0
+                            ? $"Upload All ({included})  —  {needSetup} need setup"
+                            : $"Batch Upload All ({ready})";
+                        if (GUILayout.Button(btnLabel, GUILayout.Height(30)))
                         {
-                            var batch = _outfits.Where(o => o.IncludeInBatch && !string.IsNullOrWhiteSpace(o.BlueprintId)).ToList();
-                            _ = StartBatchAsync(batch);
+                            var includedAll = _outfits.Where(o => o.IncludeInBatch).ToList();
+                            _ = StartBatchWithSetupAsync(includedAll);
                         }
 
                         GUI.backgroundColor = oldColor;
@@ -780,6 +837,12 @@ namespace ShiroTools
                 EditorUtility.SetDirty(_skinRenderer);
             }
 
+            // Apply item (accessory) include/exclude tags for THIS outfit's selection
+            ApplyItemStates(target);
+
+            // Apply this outfit's FaceEmo (active → Untagged, other outfits' FaceEmo → EditorOnly)
+            ApplyFaceEmoStates(target);
+
             Undo.CollapseUndoOperations(group);
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
 
@@ -811,14 +874,29 @@ namespace ShiroTools
         }
 
         // ---- Confirm sound ----
+        /// <summary>Finds the confirm AudioClip even if the tool folder was renamed:
+        /// tries the historical hard-coded path first, then searches the whole project by name.</summary>
+        private static AudioClip LoadConfirmClip()
+        {
+            var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(SOUND_ASSET_PATH);
+            if (clip != null) return clip;
+
+            foreach (var guid in AssetDatabase.FindAssets("UI Confirm Sound t:AudioClip"))
+            {
+                var found = AssetDatabase.LoadAssetAtPath<AudioClip>(AssetDatabase.GUIDToAssetPath(guid));
+                if (found != null) return found;
+            }
+            return null;
+        }
+
         private void PlayConfirmSound()
         {
             if (!_soundEnabled) return;
 
-            var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(SOUND_ASSET_PATH);
+            var clip = LoadConfirmClip();
             if (clip == null)
             {
-                Debug.LogWarning("[OutfitBatchUploader] Could not load confirm sound at: " + SOUND_ASSET_PATH);
+                Debug.LogWarning("[OutfitBatchUploader] Could not find the confirm sound 'UI Confirm Sound' anywhere in the project.");
                 return;
             }
 
@@ -1388,6 +1466,7 @@ namespace ShiroTools
             public Dictionary<string, float>   BlendShapes      = new Dictionary<string, float>();
             public bool                        BlendShapeExpanded = false;
             public string                      BlendShapeSearch   = "";
+            public Vector2                     BlendShapeScroll;
         }
 
         public enum VRCPlatform
