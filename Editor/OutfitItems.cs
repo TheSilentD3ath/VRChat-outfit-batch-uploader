@@ -26,9 +26,9 @@ namespace ShiroTools
     public partial class OutfitBatchUploader
     {
         private const string ITEMS_PARENT_NAME   = "ShiroItems_ParentName";
-        private const string ITEM_PREFIX         = "ShiroItem_";        // + avatar "_" outfit "_" name (per-outfit)
-        private const string ITEM_DEFAULT_PREFIX = "ShiroItemDefault_"; // + name                       (every-outfit default)
         private const string DEFAULT_ITEMS_PARENT = "Items";
+        // (Per-outfit / default include states live in OutfitProjectData —
+        //  legacy "ShiroItem_*" / "ShiroItemDefault_*" EditorPrefs are migrated there on first read.)
 
         private class ItemEntry
         {
@@ -76,20 +76,20 @@ namespace ShiroTools
         }
 
         // ============================================================
-        //  Per-outfit include state
+        //  Per-outfit include state (project-local JSON, survives plugin updates;
+        //  legacy EditorPrefs values are migrated on first read)
         // ============================================================
-        private string ItemKey(string outfitName, string itemName) =>
-            ITEM_PREFIX + (_avatarRoot != null ? _avatarRoot.name : "") + "_" + outfitName + "_" + itemName;
+        private string ItemAvatarKey => _avatarRoot != null ? _avatarRoot.name : "";
 
         private bool ItemDefaultOn(string itemName) =>
-            EditorPrefs.GetBool(ITEM_DEFAULT_PREFIX + itemName, false);
+            OutfitProjectData.GetItemDefault(ItemAvatarKey, itemName);
 
         /// <summary>Whether the item uploads with this outfit (per-outfit override, else the every-outfit default).</summary>
         private bool ItemIncludedFor(string outfitName, string itemName) =>
-            EditorPrefs.GetBool(ItemKey(outfitName, itemName), ItemDefaultOn(itemName));
+            OutfitProjectData.GetItemIncluded(ItemAvatarKey, outfitName, itemName);
 
         private void SetItemIncluded(string outfitName, string itemName, bool include) =>
-            EditorPrefs.SetBool(ItemKey(outfitName, itemName), include);
+            OutfitProjectData.SetItemIncluded(ItemAvatarKey, outfitName, itemName, include);
 
         // ============================================================
         //  Apply (called from ActivateOutfit with the active outfit)
@@ -236,11 +236,10 @@ namespace ShiroTools
             _itemDefaultsScroll = EditorGUILayout.BeginScrollView(_itemDefaultsScroll, GUILayout.Height(height));
             foreach (var it in filtered)
             {
-                string defKey = ITEM_DEFAULT_PREFIX + it.Name;
                 EditorGUI.BeginChangeCheck();
-                bool def = EditorGUILayout.ToggleLeft(it.Name, EditorPrefs.GetBool(defKey, false));
+                bool def = EditorGUILayout.ToggleLeft(it.Name, ItemDefaultOn(it.Name));
                 if (EditorGUI.EndChangeCheck())
-                    EditorPrefs.SetBool(defKey, def);
+                    OutfitProjectData.SetItemDefault(ItemAvatarKey, it.Name, def);
             }
             EditorGUILayout.EndScrollView();
         }

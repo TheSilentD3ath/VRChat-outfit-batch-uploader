@@ -218,6 +218,20 @@ namespace ShiroTools
                         "Expression-parameter memory (avatar-wide). Max 256 bits.", pcol);
                 }
 
+                GUILayout.Space(12);
+
+                // --- Texture VRAM (estimate) ---
+                float mib = EstimateVramFor(entry) / 1048576f;
+                float vExc = pc ? 40f : 10f, vGood = pc ? 75f : 18f, vMed = pc ? 110f : 25f, vPoor = pc ? 150f : 40f;
+                string vrank; Color vcol;
+                if (mib <= vGood)      { vrank = mib <= vExc ? "Excellent" : "Good"; vcol = _cGreen; }
+                else if (mib <= vPoor) { vrank = mib <= vMed ? "Medium" : "Poor";    vcol = _cYellow; }
+                else                   { vrank = "Very Poor";                        vcol = _cRed; }
+                ColoredLabel($"▦ VRAM ~{mib:0} MiB ({vrank})",
+                    $"Estimated texture memory of everything uploading with this outfit " +
+                    $"({(pc ? "PC" : "Quest")}: Excellent ≤{vExc:0}, Good ≤{vGood:0}, Medium ≤{vMed:0}, Poor ≤{vPoor:0} MiB). " +
+                    "Use the VRAM button to optimize.", vcol);
+
                 GUILayout.FlexibleSpace();
             }
         }

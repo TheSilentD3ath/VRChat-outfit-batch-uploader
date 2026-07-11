@@ -256,6 +256,71 @@ namespace ShiroTools
         }
 
         // ============================================================
+        //  Per-outfit VRAM estimate (shown in the budget counters)
+        // ============================================================
+        private double _vramCacheTime = -100;
+        private readonly Dictionary<string, long> _vramCache = new Dictionary<string, long>();
+
+        /// <summary>Estimated texture VRAM of everything that uploads WITH this outfit
+        /// (shared body + the outfit + its included items). Cached for ~10 s.</summary>
+        private long EstimateVramFor(OutfitEntry entry)
+        {
+            if (entry?.Go == null) return 0;
+            if (EditorApplication.timeSinceStartup - _vramCacheTime > 10.0)
+            {
+                _vramCache.Clear();
+                _vramCacheTime = EditorApplication.timeSinceStartup;
+            }
+            if (_vramCache.TryGetValue(entry.Name, out long cached)) return cached;
+
+            long total = 0;
+            var seen = new HashSet<Texture2D>();
+            foreach (var rend in CollectUploadRenderers(entry))
+            {
+                foreach (var mat in rend.sharedMaterials)
+                {
+                    if (mat == null || mat.shader == null) continue;
+                    int count = ShaderUtil.GetPropertyCount(mat.shader);
+                    for (int i = 0; i < count; i++)
+                    {
+                        if (ShaderUtil.GetPropertyType(mat.shader, i) != ShaderUtil.ShaderPropertyType.TexEnv)
+                            continue;
+                        if (mat.GetTexture(ShaderUtil.GetPropertyName(mat.shader, i)) is Texture2D t2d && seen.Add(t2d))
+                            total += TexBytes(t2d, BppOf(t2d.format), 1f);
+                    }
+                }
+            }
+
+            _vramCache[entry.Name] = total;
+            return total;
+        }
+
+        /// <summary>All renderers that upload with this outfit: shared body (not EditorOnly),
+        /// the outfit itself, and its included items — other outfits and excluded items skipped.</summary>
+        private IEnumerable<Renderer> CollectUploadRenderers(OutfitEntry entry)
+        {
+            if (_avatarRoot == null || entry?.Go == null) yield break;
+            EnsureItemsBuilt();
+
+            Transform outfitsT = _outfitsParent != null ? _outfitsParent.transform : null;
+            Transform itemsT   = _itemsParent   != null ? _itemsParent.transform   : null;
+
+            foreach (var r in _avatarRoot.GetComponentsInChildren<Renderer>(true))
+            {
+                Transform tr = r.transform;
+                GameObject ownerOutfit = null, ownerItem = null;
+                if (outfitsT != null) { var c = DirectChildUnder(outfitsT, tr); if (c != null) ownerOutfit = c.gameObject; }
+                if (ownerOutfit == null && itemsT != null) { var c = DirectChildUnder(itemsT, tr); if (c != null) ownerItem = c.gameObject; }
+
+                if (ownerOutfit != null && ownerOutfit != entry.Go) continue;                       // another outfit
+                if (ownerItem != null && !ItemIncludedFor(entry.Name, ownerItem.name)) continue;    // excluded item
+                if (ownerOutfit == null && ownerItem == null && IsUnderEditorOnly(tr)) continue;    // stripped shared subtree
+
+                yield return r;
+            }
+        }
+
+        // ============================================================
         //  Texture collection
         // ============================================================
         private static IEnumerable<Texture2D> CollectOutfitTextures(GameObject outfitGo)

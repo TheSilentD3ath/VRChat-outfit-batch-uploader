@@ -144,8 +144,15 @@ namespace ShiroTools
 
                 EditorGUILayout.Space(4);
                 EditorGUILayout.LabelField("Thumbnail", EditorStyles.miniBoldLabel);
-                _draft.UseSceneThumb = EditorGUILayout.ToggleLeft("From scene camera (else use the image below)", _draft.UseSceneThumb);
-                if (!_draft.UseSceneThumb)
+                int tIdx = _draft.ThumbMode == "image" ? 2 : (_draft.ThumbMode == "sceneview" ? 1 : 0);
+                tIdx = EditorGUILayout.Popup(tIdx, new[]
+                {
+                    "Standard view (auto-framed front shot)",
+                    "Scene view camera (exactly what you see)",
+                    "Default image"
+                });
+                _draft.ThumbMode = tIdx == 2 ? "image" : (tIdx == 1 ? "sceneview" : "scene");
+                if (_draft.ThumbMode == "image")
                 {
                     Texture2D tex = (!string.IsNullOrEmpty(_draft.ImagePath) && _draft.ImagePath.StartsWith("Assets"))
                         ? AssetDatabase.LoadAssetAtPath<Texture2D>(_draft.ImagePath) : null;
@@ -156,6 +163,10 @@ namespace ShiroTools
                         if (!string.IsNullOrEmpty(p)) _draft.ImagePath = p;
                     }
                 }
+                else if (_draft.ThumbMode == "sceneview")
+                    EditorGUILayout.LabelField(
+                        "Uses your current Scene view angle — arrange the view before pressing Create & Upload.",
+                        EditorStyles.wordWrappedMiniLabel);
 
                 EditorGUILayout.EndScrollView();
 

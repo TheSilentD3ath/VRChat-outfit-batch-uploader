@@ -33,18 +33,16 @@ namespace ShiroTools
     {
         private const string FACEEMO_PREFAB_NAME = "FaceEmoPrefab"; // FaceEmo's AV3Constants.MARootObjectName
         private const string FACEEMO_MENU_NEW    = "FaceEmo/New Menu";
-        private const string FE_PREFIX           = "ShiroFaceEmo_";  // + avatar "_" outfit  → captured object name
+        // (Captured object names live in OutfitProjectData — legacy "ShiroFaceEmo_*"
+        //  EditorPrefs are migrated there on first read.)
 
         private readonly Dictionary<string, bool> _faceEmoExpanded = new Dictionary<string, bool>();
 
-        private string FaceEmoKey(string outfitName) =>
-            FE_PREFIX + (_avatarRoot != null ? _avatarRoot.name : "") + "_" + outfitName;
-
         private string GetFaceEmoName(string outfitName) =>
-            EditorPrefs.GetString(FaceEmoKey(outfitName), "");
+            OutfitProjectData.GetFaceEmoName(_avatarRoot != null ? _avatarRoot.name : "", outfitName);
 
         private void SetFaceEmoName(string outfitName, string value) =>
-            EditorPrefs.SetString(FaceEmoKey(outfitName), value ?? "");
+            OutfitProjectData.SetFaceEmoName(_avatarRoot != null ? _avatarRoot.name : "", outfitName, value);
 
         private GameObject FindAvatarChild(string name)
         {

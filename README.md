@@ -112,8 +112,8 @@ The tool works in any VRChat avatar project that has the Avatar SDK installed, r
 1. **Avatar root** — drag your avatar's root GameObject into the field (auto-detected if only one avatar is in the scene)
 2. **Avatar skin** — the SkinnedMeshRenderer with blendshapes (auto-detected)
 3. **Outfits parent** — name of the GameObject that contains all outfit prefabs as direct children (default: `Outfits`)
-4. For each outfit, paste its **Blueprint ID** (`avtr_...`) — this is saved per-machine in EditorPrefs
-5. **Base Version** — (Optional) Enter a version number (e.g., `v1.2`) to automatically append it to the description of all uploaded outfits.
+4. For each outfit, paste its **Blueprint ID** (`avtr_...`) — the field validates the format, and everything is saved per-project in `ProjectSettings/ShiroOutfit_data.json` (survives plugin updates; settings from older versions are migrated automatically on first read)
+5. **Base Version** — (Optional) Enter a version number (e.g., `v1.2`) to stamp it into the description of all uploaded outfits. The dropdown next to it chooses whether the version **replaces** the description (classic behavior) or is **appended** as a `v…` line while keeping the description text.
 6. Use **"Capture current skin values"** inside each outfit's blendshape foldout to save the current skin state as that outfit's overrides
 
 ## Usage
@@ -121,6 +121,11 @@ The tool works in any VRChat avatar project that has the Avatar SDK installed, r
 - **Select** — activates a single outfit (sets tags, pipeline ID, blendshapes) without uploading
 - **Upload** — activates + uploads a single outfit
 - **Upload All** — processes every "Include in batch" outfit in order. If some selected outfits aren't set up yet (no Blueprint ID), it first asks whether to **Express-setup all** of them or **decide per outfit** (Express / Skip / Configure… in a popup with name, description, tags and thumbnail). Each set-up outfit is created & uploaded on the current platform; the already-configured outfits then run through the normal platform-grouped batch. (New outfits are uploaded on the current platform during setup — run Upload All again to also build them for other platforms.)
+- **Retry failed** — after a batch, any failed or skipped outfits can be re-queued with one click (or dismissed) instead of hunting them down manually.
+
+## Where settings are stored
+
+All per-avatar data (Blueprint IDs, batch & platform toggles, blendshape overrides, item selections, FaceEmo captures) lives in `ProjectSettings/ShiroOutfit_data.json`; avatar versions live in `ProjectSettings/ShiroOutfit_versions.json`. Both are outside the plugin folder, so **deleting/replacing the plugin folder on updates never loses your settings**, and the files can be backed up or versioned with the project. Settings created by older versions (stored in EditorPrefs) are migrated automatically the first time they're read. Global defaults (templates, thumbnail settings, sound toggle) remain in EditorPrefs.
 
 ## License
 
