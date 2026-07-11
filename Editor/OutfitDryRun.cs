@@ -104,7 +104,7 @@ namespace ShiroTools
                 Warn("An uncaptured \"FaceEmoPrefab\" exists — it would be merged into EVERY upload. Capture or delete it.");
 
             // ---- Per-outfit checks ----
-            RecomputeBudgetsIfStale();
+            RecomputeBudgetsNow();   // synchronous — the report needs fresh numbers right now
             EnsureItemsBuilt();
             bool pc = GetCurrentPlatform() == VRCPlatform.Windows;
 

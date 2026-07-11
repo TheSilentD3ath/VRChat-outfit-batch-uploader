@@ -180,6 +180,7 @@ namespace ShiroTools
                 }
             }
             EditorGUILayout.EndScrollView();
+            RegisterNestedScrollRect();
             _outfitItemsScroll[entry.Name] = sp;
         }
 

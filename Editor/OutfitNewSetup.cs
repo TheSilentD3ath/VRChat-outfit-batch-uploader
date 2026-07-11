@@ -397,9 +397,11 @@ namespace ShiroTools
         //  Express / new-avatar creation flow
         // ============================================================
         private bool _isExpressBusy;
+        private bool _expressQuietMode;   // true while the Upload-All gate runs several Express setups (one sound at the end instead of one per outfit)
 
         private async Task ExpressSetupAsync(OutfitEntry entry, AdvancedDraft draft = null, bool skipConfirm = false)
         {
+            _expressQuietMode = skipConfirm;
             if (_avatarRoot == null) { SetStatus("No avatar root selected.", MessageType.Error); return; }
             if (_outfitsParent == null) { SetStatus("No outfits parent found.", MessageType.Error); return; }
 
@@ -548,24 +550,39 @@ namespace ShiroTools
                 await builder.BuildAndUpload(_avatarRoot, newAvatar, thumbPath);
 
                 // The SDK writes the new ID onto the PipelineManager after a successful create.
-                string newId = pm.blueprintId;
-                var entry = _outfits.FirstOrDefault(o => o.Name == outfitName);
-                if (!string.IsNullOrWhiteSpace(newId) && entry != null)
+                // On some SDK versions that happens a moment AFTER BuildAndUpload returns,
+                // so poll for up to ~5 seconds (and re-resolve the component each try).
+                string newId = null;
+                for (int i = 0; i < 25 && string.IsNullOrWhiteSpace(newId); i++)
                 {
-                    entry.BlueprintId = newId;
-                    if (entry.Data != null)
+                    var pmNow = _avatarRoot != null ? _avatarRoot.GetComponentInChildren<PipelineManager>() : pm;
+                    newId = pmNow != null ? pmNow.blueprintId : null;
+                    if (string.IsNullOrWhiteSpace(newId)) await Task.Delay(200);
+                }
+
+                if (!string.IsNullOrWhiteSpace(newId))
+                {
+                    // Persist straight into the project store — works even if the outfit list
+                    // was rebuilt in the meantime and the UI entry object is stale/gone.
+                    var entry = _outfits.FirstOrDefault(o => o.Name == outfitName);
+                    var data = entry?.Data ?? (_avatarRoot != null
+                        ? OutfitProjectData.GetOutfit(_avatarRoot.name, outfitName)
+                        : null);
+                    if (entry != null) entry.BlueprintId = newId;
+                    if (data != null)
                     {
-                        entry.Data.blueprintId = newId;
-                        OutfitProjectData.MarkUploaded(entry.Data, GetCurrentPlatform().ToString());
+                        data.blueprintId = newId;
+                        OutfitProjectData.MarkUploaded(data, GetCurrentPlatform().ToString());
                     }
                     LogUpload($"OK    {outfitName} (Express new avatar) → {newId}");
                     SetStatus($"✓ Created new avatar for '{outfitName}'  →  {newId}", MessageType.Info);
-                    if (_soundEnabled) PlayConfirmSound();
+                    if (_soundEnabled && !_expressQuietMode) PlayConfirmSound();
                 }
                 else
                 {
+                    LogUpload($"WARN  {outfitName} (Express new avatar): upload finished but no Blueprint ID appeared on the PipelineManager.");
                     SetStatus($"Upload finished but no new Blueprint ID was detected. " +
-                              "Check the SDK panel and paste the ID manually if needed.", MessageType.Warning);
+                              "Use the ▾ picker (☁ fetches your avatars) or paste the ID manually.", MessageType.Warning);
                 }
             }
             catch (Exception ex)

@@ -115,6 +115,18 @@ namespace ShiroTools
         private MessageType        _statusType       = MessageType.Info;
         private CancellationTokenSource _cts;
 
+        // ---- Per-repaint caches (avoid registry / JSON reads in OnGUI) ----
+        private int _versionMode;                        // 0 = replace desc, 1 = append line
+        private List<QueueItem> _failedCache = new List<QueueItem>();
+        private bool _failedDirty = true;
+
+        // ---- Cached GUIContent (avoid per-row allocations every repaint) ----
+        private static readonly GUIContent GC_VRAM  = new GUIContent("VRAM", "Optimize this outfit's textures (compression + resolution)");
+        private static readonly GUIContent GC_THUMB = new GUIContent("Thumb", "Capture & upload a new VRChat thumbnail for this outfit (with preview — nothing else is rebuilt)");
+        private static readonly GUIContent GC_PICK  = new GUIContent("▾", "Pick from your VRChat avatars");
+        private static readonly GUIContent GC_CLOUD = new GUIContent("☁ IDs", "Fetch your avatars from VRChat and auto-match Blueprint IDs to outfits by name");
+        private static readonly GUIContent GC_DRYRUN = new GUIContent("Dry run", "Checks everything the batch would check (IDs, platforms, budgets, …) without uploading anything.");
+
         // ---- Styles (lazy init) ----
         private GUIStyle _headerStyle;
         private GUIStyle _activeRowStyle;
@@ -134,8 +146,11 @@ namespace ShiroTools
         {
             _outfitsParentName = EditorPrefs.GetString(PREFS_PARENT_NAME, DEFAULT_PARENT_NAME);
             _soundEnabled      = EditorPrefs.GetBool(PREFS_SOUND_ENABLED, true);
+            _versionMode       = EditorPrefs.GetInt(PREFS_VERSION_MODE, 0);
+            _motionBlur        = EditorPrefs.GetBool(PREFS_MOTION_BLUR, true);
             ScanScene();
             EditorSceneManager.sceneOpened += OnSceneOpened;
+            EditorApplication.hierarchyChanged += OnHierarchyChangedInvalidate;
 
             // Resume batch if we just woke up from a Domain Reload (e.g. after a platform switch)
             if (SessionState.GetBool(SESSION_BATCH_ACTIVE, false))
@@ -156,12 +171,22 @@ namespace ShiroTools
         private void OnDisable()
         {
             EditorSceneManager.sceneOpened -= OnSceneOpened;
+            EditorApplication.hierarchyChanged -= OnHierarchyChangedInvalidate;
             EditorApplication.update -= HandleResumeExpress;
             EditorApplication.update -= HandleResumeBatch;
             EditorApplication.update -= HandleFinishedBatch;
+            StopVramPump();
+            StopScrollAnim();
             StopConsentWatcher();
             _cts?.Dispose();
             _cts = null;
+        }
+
+        /// <summary>Scene structure changed → cached VRAM values and budget buckets are stale.</summary>
+        private void OnHierarchyChangedInvalidate()
+        {
+            ClearVramCache();
+            MarkBudgetsDirty();
         }
 
         private void OnSceneOpened(Scene scene, OpenSceneMode mode)
@@ -356,6 +381,10 @@ namespace ShiroTools
         {
             InitStyles();
 
+            if (Event.current.type == EventType.Repaint)
+                _nestedScrollScreenRects.Clear();
+            HandleSmoothScrollEvent();
+
             // ---- Header ----
             EditorGUILayout.Space(8);
             EditorGUILayout.LabelField("VRC Outfit Batch Uploader", _headerStyle);
@@ -378,6 +407,12 @@ namespace ShiroTools
                     $"Outfits ({_outfits.Count})  —  parent: \"{_outfitsParent.name}\"",
                     EditorStyles.boldLabel);
                 GUILayout.FlexibleSpace();
+                EditorGUI.BeginChangeCheck();
+                _motionBlur = EditorGUILayout.ToggleLeft(
+                    new GUIContent("💨", "Motion blur while the list glides (purely cosmetic — turn off if you hate fun)"),
+                    _motionBlur, GUILayout.Width(38));
+                if (EditorGUI.EndChangeCheck())
+                    EditorPrefs.SetBool(PREFS_MOTION_BLUR, _motionBlur);
                 using (new EditorGUI.DisabledScope(_isBatchUploading || _isExpressBusy))
                 {
                     EditorGUILayout.LabelField("Include in batch:", EditorStyles.miniLabel, GUILayout.Width(96));
@@ -387,10 +422,16 @@ namespace ShiroTools
             }
             EditorGUILayout.Space(4);
 
+            _ghostCapture = _motionBlur && _scrollAnimActive;
+            if (Event.current.type == EventType.Repaint) _ghostRows.Clear();
+
             _scroll = EditorGUILayout.BeginScrollView(_scroll, GUILayout.ExpandHeight(true));
             for (int i = 0; i < _outfits.Count; i++)
                 DrawOutfitRow(_outfits[i]);
+            DrawScrollGhosts();
             EditorGUILayout.EndScrollView();
+            if (Event.current.type == EventType.Repaint)
+                _mainListScreenRect = GUIUtility.GUIToScreenRect(GUILayoutUtility.GetLastRect());
 
             DrawSeparator();
             DrawNewOutfitSetupSection();
@@ -432,9 +473,7 @@ namespace ShiroTools
 
                 using (new EditorGUI.DisabledScope(_isBatchUploading || _isExpressBusy || _isFetchingAvatars))
                 {
-                    if (GUILayout.Button(new GUIContent("☁ IDs",
-                            "Fetch your avatars from VRChat and auto-match Blueprint IDs to outfits by name"),
-                        EditorStyles.miniButton, GUILayout.Width(48)))
+                    if (GUILayout.Button(GC_CLOUD, EditorStyles.miniButton, GUILayout.Width(48)))
                         _ = FetchAndMatchAsync();
                 }
             }
@@ -505,14 +544,13 @@ namespace ShiroTools
                     }
 
                     EditorGUI.BeginChangeCheck();
-                    int vMode = EditorPrefs.GetInt(PREFS_VERSION_MODE, 0);
-                    vMode = EditorGUILayout.Popup(vMode, new[]
+                    _versionMode = EditorGUILayout.Popup(_versionMode, new[]
                     {
                         "replaces description",
                         "appends \"v…\" line"
                     }, GUILayout.Width(140));
                     if (EditorGUI.EndChangeCheck())
-                        EditorPrefs.SetInt(PREFS_VERSION_MODE, vMode);
+                        EditorPrefs.SetInt(PREFS_VERSION_MODE, _versionMode);
                 }
             }
         }
@@ -579,12 +617,12 @@ namespace ShiroTools
                             Selection.activeGameObject = entry.Go;
                         }
 
-                        if (GUILayout.Button(new GUIContent("VRAM", "Optimize this outfit's textures (compression + resolution)"), GUILayout.Width(50)))
+                        if (GUILayout.Button(GC_VRAM, GUILayout.Width(50)))
                             OptimizeOutfitTextures(entry);
 
                         using (new EditorGUI.DisabledScope(!IsValidBlueprintId(entry.BlueprintId) || _isExpressBusy))
                         {
-                            if (GUILayout.Button(new GUIContent("Thumb", "Capture & upload a new VRChat thumbnail for this outfit (with preview — nothing else is rebuilt)"), GUILayout.Width(52)))
+                            if (GUILayout.Button(GC_THUMB, GUILayout.Width(52)))
                                 StartThumbnailUpdate(entry);
                         }
                     }
@@ -609,7 +647,7 @@ namespace ShiroTools
 
                     using (new EditorGUI.DisabledScope(_isBatchUploading || _isExpressBusy || _isFetchingAvatars))
                     {
-                        if (GUILayout.Button(new GUIContent("▾", "Pick from your VRChat avatars"), GUILayout.Width(22)))
+                        if (GUILayout.Button(GC_PICK, GUILayout.Width(22)))
                             _ = ShowAvatarPickerAsync(entry);
                     }
 
@@ -680,6 +718,13 @@ namespace ShiroTools
                 DrawOutfitItems(entry);
                 DrawOutfitFaceEmo(entry);
             }
+            if (_ghostCapture && Event.current.type == EventType.Repaint)
+                _ghostRows.Add(new GhostRow
+                {
+                    rect   = GUILayoutUtility.GetLastRect(),
+                    name   = entry.Name,
+                    active = isActive
+                });
             EditorGUILayout.Space(2);
         }
 
@@ -787,6 +832,7 @@ namespace ShiroTools
                 }
             }
             EditorGUILayout.EndScrollView();
+            RegisterNestedScrollRect();
 
             if (dirty) { SaveBlendShapes(entry); Repaint(); }
 
@@ -816,9 +862,7 @@ namespace ShiroTools
                 GUILayout.FlexibleSpace();
                 using (new EditorGUI.DisabledScope(_isBatchUploading || _isExpressBusy))
                 {
-                    if (GUILayout.Button(new GUIContent("Dry run",
-                            "Checks everything the batch would check (IDs, platforms, budgets, …) without uploading anything."),
-                        EditorStyles.miniButton, GUILayout.Width(60)))
+                    if (GUILayout.Button(GC_DRYRUN, EditorStyles.miniButton, GUILayout.Width(60)))
                         RunDryRun();
                 }
                 EditorGUI.BeginChangeCheck();
@@ -885,7 +929,12 @@ namespace ShiroTools
             // Retry failed/skipped uploads from the last batch
             if (!_isBatchUploading)
             {
-                var lastFailed = LoadQueue(SESSION_FAILED);
+                if (_failedDirty)
+                {
+                    _failedCache = LoadQueue(SESSION_FAILED);   // parse only when it changed, not per repaint
+                    _failedDirty = false;
+                }
+                var lastFailed = _failedCache;
                 if (lastFailed.Count > 0)
                 {
                     EditorGUILayout.Space(2);
@@ -900,7 +949,10 @@ namespace ShiroTools
                             GUI.backgroundColor = oldColor;
                         }
                         if (GUILayout.Button("Dismiss", GUILayout.Width(70), GUILayout.Height(24)))
+                        {
                             SessionState.EraseString(SESSION_FAILED);
+                            _failedDirty = true;
+                        }
                     }
                 }
             }
@@ -1278,6 +1330,7 @@ namespace ShiroTools
             SessionState.SetInt(SESSION_BATCH_INDEX, 0);
             SessionState.SetBool(SESSION_BATCH_ACTIVE, true);
             SessionState.EraseString(SESSION_FAILED);
+            _failedDirty = true;
             SessionState.SetString(SESSION_INITIAL_PLATFORM, currentPlatform.ToString());
             SessionState.SetString(SESSION_BATCH_VERSION, _avatarVersion); // Capture the version from UI
 
@@ -1441,6 +1494,7 @@ namespace ShiroTools
             var failedList = LoadQueue(SESSION_FAILED);
             failedList.Add(failed);
             SaveQueue(SESSION_FAILED, failedList);
+            _failedDirty = true;
 
             LogUpload($"FAIL  {outfitName} ({platform}): {ex.Message}");
 
@@ -1606,6 +1660,123 @@ namespace ShiroTools
         // ============================================================
         //  Helpers
         // ============================================================
+
+        // ============================================================
+        //  Smooth / momentum scrolling for the main outfit list.
+        //  IMGUI windows repaint event-driven (not at monitor refresh
+        //  rate) — during the glide an update tick drives repaints, so
+        //  the animation runs at full editor frame rate. Flick the
+        //  wheel and the list keeps gliding with friction after release.
+        //  Wheel events over nested lists (blendshapes/items) are left
+        //  to those lists.
+        // ============================================================
+        private float  _scrollVelocity;
+        private bool   _scrollAnimActive;
+        private double _lastScrollAnimTime;
+        private float  _lastAnimScrollY = -1f;
+        private Rect   _mainListScreenRect;
+        private readonly List<Rect> _nestedScrollScreenRects = new List<Rect>();
+
+        // ---- Motion blur (cosmetic ghost trails while the list glides) ----
+        private const string PREFS_MOTION_BLUR = "ShiroOutfitUploader_MotionBlur";
+        private bool _motionBlur;
+        private bool _ghostCapture;
+
+        private struct GhostRow
+        {
+            public Rect rect;
+            public string name;
+            public bool active;
+        }
+        private readonly List<GhostRow> _ghostRows = new List<GhostRow>();
+
+        /// <summary>Draws translucent, velocity-offset copies of the row silhouettes —
+        /// poor man's motion blur. Non-layout GUI calls, Repaint event only, so IMGUI
+        /// control IDs stay untouched. Runs only while the glide is fast enough.</summary>
+        private void DrawScrollGhosts()
+        {
+            if (!_motionBlur || !_scrollAnimActive) return;
+            if (Event.current.type != EventType.Repaint) return;
+
+            float speed = Mathf.Abs(_scrollVelocity);
+            if (speed < 6f) return;
+
+            float strength = Mathf.InverseLerp(6f, 55f, Mathf.Clamp(speed, 0f, 55f));
+            Color old = GUI.color;
+            for (int g = 1; g <= 2; g++)
+            {
+                GUI.color = new Color(1f, 1f, 1f, (0.22f / g) * strength);
+                float off = _scrollVelocity * 0.6f * g;   // trail behind the motion
+                for (int i = 0; i < _ghostRows.Count; i++)
+                {
+                    var gr = _ghostRows[i];
+                    var r = new Rect(gr.rect.x, gr.rect.y + off, gr.rect.width, gr.rect.height);
+                    GUI.Box(r, GUIContent.none, gr.active ? _activeRowStyle : _inactiveRowStyle);
+                    GUI.Label(new Rect(r.x + 6f, r.y + 4f, r.width - 12f, 18f),
+                        (gr.active ? "●  " : "○  ") + gr.name, EditorStyles.boldLabel);
+                }
+            }
+            GUI.color = old;
+        }
+
+        /// <summary>Call right after a nested EndScrollView so wheel events over it stay native.</summary>
+        private void RegisterNestedScrollRect()
+        {
+            if (Event.current.type == EventType.Repaint)
+                _nestedScrollScreenRects.Add(GUIUtility.GUIToScreenRect(GUILayoutUtility.GetLastRect()));
+        }
+
+        private void HandleSmoothScrollEvent()
+        {
+            var e = Event.current;
+            if (e.type != EventType.ScrollWheel) return;
+
+            Vector2 sp = GUIUtility.GUIToScreenPoint(e.mousePosition);
+            if (!_mainListScreenRect.Contains(sp)) return;
+            for (int i = 0; i < _nestedScrollScreenRects.Count; i++)
+                if (_nestedScrollScreenRects[i].Contains(sp)) return;
+
+            _scrollVelocity += e.delta.y * 4.5f;                       // flick impulse
+            _scrollVelocity  = Mathf.Clamp(_scrollVelocity, -90f, 90f);
+            StartScrollAnim();
+            e.Use();
+        }
+
+        private void StartScrollAnim()
+        {
+            _lastScrollAnimTime = EditorApplication.timeSinceStartup;
+            _lastAnimScrollY = -1f;
+            if (_scrollAnimActive) return;
+            _scrollAnimActive = true;
+            EditorApplication.update += ScrollAnimTick;
+        }
+
+        private void StopScrollAnim()
+        {
+            _scrollAnimActive = false;
+            _scrollVelocity = 0f;
+            EditorApplication.update -= ScrollAnimTick;
+        }
+
+        private void ScrollAnimTick()
+        {
+            double now = EditorApplication.timeSinceStartup;
+            float dt = Mathf.Clamp((float)(now - _lastScrollAnimTime), 0.001f, 0.05f);
+            _lastScrollAnimTime = now;
+
+            float startY = _scroll.y;
+            // Position didn't move since last tick although we pushed → list hit its end.
+            if (Mathf.Approximately(startY, _lastAnimScrollY)) { StopScrollAnim(); Repaint(); return; }
+            _lastAnimScrollY = startY;
+
+            _scroll.y += _scrollVelocity * (dt * 60f);
+            _scrollVelocity *= Mathf.Exp(-5f * dt);                    // friction / glide decay
+
+            if (_scroll.y <= 0f) { _scroll.y = 0f; StopScrollAnim(); }
+            else if (Mathf.Abs(_scrollVelocity) < 0.4f) StopScrollAnim();
+
+            Repaint();
+        }
 
         /// <summary>"3d ago" style label for a stored "yyyy-MM-dd HH:mm" timestamp.</summary>
         private static string AgoLabel(string stamp)

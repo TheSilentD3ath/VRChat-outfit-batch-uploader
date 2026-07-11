@@ -30,7 +30,12 @@ namespace ShiroTools
         private const int CONTACT_HARD_LIMIT = 256;   // AvatarValidation.MAX_AVD_CONTACTS_PER_AVATAR
 
         private double _budgetCacheTime = -10;
+        private bool _budgetDirty = true;
         private bool _hasVRCFury;
+        private int  _paramCost;
+        private int  _paramMax = 256;
+
+        internal void MarkBudgetsDirty() => _budgetDirty = true;
 
         private (int net, int total) _cShared;
         private readonly Dictionary<GameObject, (int net, int total)> _cOutfit = new Dictionary<GameObject, (int, int)>();
@@ -40,9 +45,21 @@ namespace ShiroTools
         private readonly Dictionary<GameObject, int> _lOutfit = new Dictionary<GameObject, int>();
         private readonly Dictionary<string, int> _lItem = new Dictionary<string, int>();
 
+        /// <summary>Event-driven (hierarchyChanged) with a 10 s safety fallback.
+        /// Runs synchronously, but only when dirty, only once per GUI pass (Layout
+        /// event), and never while the list is gliding — so no mid-scroll hitches.</summary>
         private void RecomputeBudgetsIfStale()
         {
-            if (EditorApplication.timeSinceStartup - _budgetCacheTime < 0.5) return;
+            if (EditorApplication.timeSinceStartup - _budgetCacheTime > 10.0) _budgetDirty = true;
+            if (!_budgetDirty) return;
+            if (_scrollAnimActive) return;   // defer until the glide ends
+            if (Event.current != null && Event.current.type != EventType.Layout) return;
+            RecomputeBudgetsNow();
+        }
+
+        internal void RecomputeBudgetsNow()
+        {
+            _budgetDirty = false;
             _budgetCacheTime = EditorApplication.timeSinceStartup;
 
             _cShared = (0, 0); _cOutfit.Clear(); _cItem.Clear();
@@ -85,6 +102,8 @@ namespace ShiroTools
                     else                       { _lShared++; }
                 }
             }
+
+            ComputeParamCost();
         }
 
         private void ContactsFor(OutfitEntry outfit, out int net, out int total)
@@ -112,17 +131,18 @@ namespace ShiroTools
             return total;
         }
 
-        private void GetParamCost(out int cost, out int max)
+        /// <summary>Computed during the budget scan (CalcTotalCost is too heavy to run per row per repaint).</summary>
+        private void ComputeParamCost()
         {
-            cost = 0;
-            max = 256;
+            _paramCost = 0;
+            _paramMax = 256;
             try
             {
                 int m = VRCExpressionParameters.MAX_PARAMETER_COST;
-                max = (m > 9999 || m <= 0) ? 256 : m;   // some modified SDKs report a broken value
+                _paramMax = (m > 9999 || m <= 0) ? 256 : m;   // some modified SDKs report a broken value
                 var desc = _avatarRoot != null ? _avatarRoot.GetComponent<VRCAvatarDescriptor>() : null;
                 var ep = desc != null ? desc.expressionParameters : null;
-                if (ep != null) cost = ep.CalcTotalCost();
+                if (ep != null) _paramCost = ep.CalcTotalCost();
             }
             catch { /* leave defaults */ }
         }
@@ -180,7 +200,7 @@ namespace ShiroTools
 
             ContactsFor(entry, out int net, out int total);
             int lights = LightsFor(entry);
-            GetParamCost(out int pCost, out int pMax);
+            int pCost = _paramCost, pMax = _paramMax;
             bool pc = GetCurrentPlatform() == VRCPlatform.Windows;
 
             using (new EditorGUILayout.HorizontalScope())
@@ -220,17 +240,22 @@ namespace ShiroTools
 
                 GUILayout.Space(12);
 
-                // --- Texture VRAM (estimate) ---
-                float mib = EstimateVramFor(entry) / 1048576f;
-                float vExc = pc ? 40f : 10f, vGood = pc ? 75f : 18f, vMed = pc ? 110f : 25f, vPoor = pc ? 150f : 40f;
-                string vrank; Color vcol;
-                if (mib <= vGood)      { vrank = mib <= vExc ? "Excellent" : "Good"; vcol = _cGreen; }
-                else if (mib <= vPoor) { vrank = mib <= vMed ? "Medium" : "Poor";    vcol = _cYellow; }
-                else                   { vrank = "Very Poor";                        vcol = _cRed; }
-                ColoredLabel($"▦ VRAM ~{mib:0} MiB ({vrank})",
-                    $"Estimated texture memory of everything uploading with this outfit " +
-                    $"({(pc ? "PC" : "Quest")}: Excellent ≤{vExc:0}, Good ≤{vGood:0}, Medium ≤{vMed:0}, Poor ≤{vPoor:0} MiB). " +
-                    "Use the VRAM button to optimize.", vcol);
+                // --- Texture VRAM (estimate, computed amortized so the UI never hitches) ---
+                if (!TryGetVramFor(entry, out long vBytes))
+                    ColoredLabel("▦ VRAM …", "Calculating texture memory…", _cGray);
+                else
+                {
+                    float mib = vBytes / 1048576f;
+                    float vExc = pc ? 40f : 10f, vGood = pc ? 75f : 18f, vMed = pc ? 110f : 25f, vPoor = pc ? 150f : 40f;
+                    string vrank; Color vcol;
+                    if (mib <= vGood)      { vrank = mib <= vExc ? "Excellent" : "Good"; vcol = _cGreen; }
+                    else if (mib <= vPoor) { vrank = mib <= vMed ? "Medium" : "Poor";    vcol = _cYellow; }
+                    else                   { vrank = "Very Poor";                        vcol = _cRed; }
+                    ColoredLabel($"▦ VRAM ~{mib:0} MiB ({vrank})",
+                        $"Estimated texture memory of everything uploading with this outfit " +
+                        $"({(pc ? "PC" : "Quest")}: Excellent ≤{vExc:0}, Good ≤{vGood:0}, Medium ≤{vMed:0}, Poor ≤{vPoor:0} MiB). " +
+                        "Use the VRAM button to optimize.", vcol);
+                }
 
                 GUILayout.FlexibleSpace();
             }

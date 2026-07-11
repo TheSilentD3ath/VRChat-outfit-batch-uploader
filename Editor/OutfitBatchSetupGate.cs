@@ -80,13 +80,18 @@ namespace ShiroTools
                 }
             }
 
+            _expressQuietMode = false;
+
             // Upload the already-configured outfits via the normal platform-grouped batch.
             // (Outfits just set up above were already uploaded on the current platform.)
             var toBatch = configured.Where(o => o.Go != null && !string.IsNullOrWhiteSpace(o.BlueprintId)).ToList();
             if (toBatch.Count > 0)
                 await StartBatchAsync(toBatch);
             else if (unconfigured.Count > 0)
+            {
                 SetStatus("Outfit setup complete.", MessageType.Info);
+                if (_soundEnabled) PlayConfirmSound();   // ONE sound for the whole setup run
+            }
         }
 
         // ============================================================

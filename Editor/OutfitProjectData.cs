@@ -91,6 +91,19 @@ namespace ShiroTools
 
         private static Root _root;
 
+        // ---- In-memory memo caches (GUI reads these every repaint — keep them O(1)) ----
+        //      Tuple keys instead of concatenated strings: no per-lookup allocations.
+        private static readonly Dictionary<(string avatar, string outfit), OutfitData> _outfitCache =
+            new Dictionary<(string, string), OutfitData>();
+        private static readonly Dictionary<(string kind, string avatar, string outfit, string item), bool> _boolMemo =
+            new Dictionary<(string, string, string, string), bool>();
+
+        private static void ClearCaches()
+        {
+            _outfitCache.Clear();
+            _boolMemo.Clear();
+        }
+
         // ============================================================
         //  Load / save
         // ============================================================
@@ -151,35 +164,48 @@ namespace ShiroTools
         /// EditorPrefs values for it) if the JSON doesn't know it yet.</summary>
         internal static OutfitData GetOutfit(string avatarName, string outfitName)
         {
+            var key = (avatarName, outfitName);
+            if (_outfitCache.TryGetValue(key, out var cached)) return cached;
+
             var av = GetAvatar(avatarName);
             var o = av.outfits.FirstOrDefault(x => x.name == outfitName);
-            if (o != null) return o;
-
-            o = new OutfitData { name = outfitName };
-            MigrateLegacyOutfit(avatarName, o);
-            av.outfits.Add(o);
-            Save();
+            if (o == null)
+            {
+                o = new OutfitData { name = outfitName };
+                MigrateLegacyOutfit(avatarName, o);
+                av.outfits.Add(o);
+                Save();
+            }
+            _outfitCache[key] = o;
             return o;
         }
 
         // ---- Items ----
         internal static bool GetItemIncluded(string avatarName, string outfitName, string itemName)
         {
+            var memoKey = ("I", avatarName, outfitName, itemName);
+            if (_boolMemo.TryGetValue(memoKey, out bool memo)) return memo;
+
+            bool result;
             var o = GetOutfit(avatarName, outfitName);
             var ov = o.itemOverrides.FirstOrDefault(x => x.name == itemName);
-            if (ov != null) return ov.included;
-
-            // Legacy per-outfit override?
-            string legacyKey = LEGACY_ITEM_PREFIX + avatarName + "_" + outfitName + "_" + itemName;
-            if (EditorPrefs.HasKey(legacyKey))
+            if (ov != null) result = ov.included;
+            else
             {
-                bool val = EditorPrefs.GetBool(legacyKey, false);
-                o.itemOverrides.Add(new ItemOverride { name = itemName, included = val });
-                Save();
-                return val;
+                // Legacy per-outfit override?
+                string legacyKey = LEGACY_ITEM_PREFIX + avatarName + "_" + outfitName + "_" + itemName;
+                if (EditorPrefs.HasKey(legacyKey))
+                {
+                    result = EditorPrefs.GetBool(legacyKey, false);
+                    o.itemOverrides.Add(new ItemOverride { name = itemName, included = result });
+                    Save();
+                }
+                else
+                    result = GetItemDefault(avatarName, itemName);
             }
 
-            return GetItemDefault(avatarName, itemName);
+            _boolMemo[memoKey] = result;
+            return result;
         }
 
         internal static void SetItemIncluded(string avatarName, string outfitName, string itemName, bool included)
@@ -188,26 +214,31 @@ namespace ShiroTools
             var ov = o.itemOverrides.FirstOrDefault(x => x.name == itemName);
             if (ov == null) o.itemOverrides.Add(new ItemOverride { name = itemName, included = included });
             else ov.included = included;
+            _boolMemo[("I", avatarName, outfitName, itemName)] = included;
             Save();
         }
 
         internal static bool GetItemDefault(string avatarName, string itemName)
         {
-            var av = GetAvatar(avatarName);
-            if (av.itemDefaults.Contains(itemName)) return true;
-            if (av.itemDefaultsDecided.Contains(itemName)) return false;
+            var memoKey = ("D", avatarName, itemName, (string)null);
+            if (_boolMemo.TryGetValue(memoKey, out bool memo)) return memo;
 
-            // Legacy global default (old model was not per avatar)
-            string legacyKey = LEGACY_ITEM_DEFAULT_PREFIX + itemName;
-            if (EditorPrefs.HasKey(legacyKey))
+            bool result;
+            var av = GetAvatar(avatarName);
+            if (av.itemDefaults.Contains(itemName)) result = true;
+            else if (av.itemDefaultsDecided.Contains(itemName)) result = false;
+            else
             {
-                bool val = EditorPrefs.GetBool(legacyKey, false);
+                // Legacy global default (old model was not per avatar)
+                string legacyKey = LEGACY_ITEM_DEFAULT_PREFIX + itemName;
+                result = EditorPrefs.HasKey(legacyKey) && EditorPrefs.GetBool(legacyKey, false);
                 av.itemDefaultsDecided.Add(itemName);
-                if (val) av.itemDefaults.Add(itemName);
+                if (result) av.itemDefaults.Add(itemName);
                 Save();
-                return val;
             }
-            return false;
+
+            _boolMemo[memoKey] = result;
+            return result;
         }
 
         internal static void SetItemDefault(string avatarName, string itemName, bool included)
@@ -217,6 +248,8 @@ namespace ShiroTools
             bool has = av.itemDefaults.Contains(itemName);
             if (included && !has) av.itemDefaults.Add(itemName);
             if (!included && has) av.itemDefaults.Remove(itemName);
+            // A default change can affect every outfit's effective value → drop all memos.
+            _boolMemo.Clear();
             Save();
         }
 
@@ -255,6 +288,7 @@ namespace ShiroTools
                 var parsed = JsonUtility.FromJson<Root>(json);
                 if (parsed == null || parsed.avatars == null || parsed.avatars.Count == 0) return false;
                 _root = parsed;
+                ClearCaches();
                 Save();
                 return true;
             }

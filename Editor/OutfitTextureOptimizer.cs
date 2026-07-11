@@ -127,6 +127,7 @@ namespace ShiroTools
             if (!ok) { SetStatus("Texture optimization cancelled.", MessageType.Warning); return; }
 
             ApplyPlan(plan);
+            ClearVramCache();
             SetStatus($"✓ Optimized {plan.Count} texture(s) for '{entry.Name}' — saved ~{Mib(saved)}.", MessageType.Info);
         }
 
@@ -155,6 +156,7 @@ namespace ShiroTools
             }
 
             ApplyPlan(plan);
+            ClearVramCache();
             SetStatus($"Optimized {plan.Count} texture(s) — saved ~{Mib(saved)}.", MessageType.Info);
             Repaint();
         }
@@ -257,22 +259,70 @@ namespace ShiroTools
 
         // ============================================================
         //  Per-outfit VRAM estimate (shown in the budget counters)
+        //
+        //  Perf notes: values are computed OUTSIDE OnGUI by a throttled
+        //  EditorApplication.update pump (one outfit per ~150 ms), so
+        //  scrolling stays perfectly smooth — pending rows just show "…".
+        //  Results are cached until the hierarchy changes. Textures are
+        //  enumerated via GetTexturePropertyNames (ShaderUtil property
+        //  iteration is very slow on big shaders like Poiyomi/lilToon).
         // ============================================================
-        private double _vramCacheTime = -100;
         private readonly Dictionary<string, long> _vramCache = new Dictionary<string, long>();
+        private bool _vramPumpActive;
+        private double _nextVramTick;
+
+        internal void ClearVramCache() => _vramCache.Clear();
+
+        internal void StopVramPump()
+        {
+            _vramPumpActive = false;
+            EditorApplication.update -= VramPumpTick;
+        }
 
         /// <summary>Estimated texture VRAM of everything that uploads WITH this outfit
-        /// (shared body + the outfit + its included items). Cached for ~10 s.</summary>
-        private long EstimateVramFor(OutfitEntry entry)
+        /// (shared body + the outfit + its included items). Returns false while the
+        /// value is still being computed in the background.</summary>
+        private bool TryGetVramFor(OutfitEntry entry, out long bytes)
         {
-            if (entry?.Go == null) return 0;
-            if (EditorApplication.timeSinceStartup - _vramCacheTime > 10.0)
-            {
-                _vramCache.Clear();
-                _vramCacheTime = EditorApplication.timeSinceStartup;
-            }
-            if (_vramCache.TryGetValue(entry.Name, out long cached)) return cached;
+            bytes = 0;
+            if (entry?.Go == null) return true;
+            if (_vramCache.TryGetValue(entry.Name, out bytes)) return true;
+            EnsureVramPump();
+            return false;
+        }
 
+        private void EnsureVramPump()
+        {
+            if (_vramPumpActive) return;
+            _vramPumpActive = true;
+            EditorApplication.update -= VramPumpTick;
+            EditorApplication.update += VramPumpTick;
+        }
+
+        private void VramPumpTick()
+        {
+            if (_scrollAnimActive) return;   // never do heavy work mid-glide — resume after
+            if (EditorApplication.timeSinceStartup < _nextVramTick) return;
+            _nextVramTick = EditorApplication.timeSinceStartup + 0.15;
+
+            OutfitEntry missing = null;
+            foreach (var o in _outfits)
+                if (o?.Go != null && !_vramCache.ContainsKey(o.Name)) { missing = o; break; }
+
+            if (missing == null)
+            {
+                StopVramPump();
+                Repaint();
+                return;
+            }
+
+            try { ComputeVramFor(missing); }
+            catch { _vramCache[missing.Name] = 0; }   // never let the pump die
+            Repaint();
+        }
+
+        private void ComputeVramFor(OutfitEntry entry)
+        {
             long total = 0;
             var seen = new HashSet<Texture2D>();
             foreach (var rend in CollectUploadRenderers(entry))
@@ -280,19 +330,12 @@ namespace ShiroTools
                 foreach (var mat in rend.sharedMaterials)
                 {
                     if (mat == null || mat.shader == null) continue;
-                    int count = ShaderUtil.GetPropertyCount(mat.shader);
-                    for (int i = 0; i < count; i++)
-                    {
-                        if (ShaderUtil.GetPropertyType(mat.shader, i) != ShaderUtil.ShaderPropertyType.TexEnv)
-                            continue;
-                        if (mat.GetTexture(ShaderUtil.GetPropertyName(mat.shader, i)) is Texture2D t2d && seen.Add(t2d))
+                    foreach (var propName in mat.GetTexturePropertyNames())
+                        if (mat.GetTexture(propName) is Texture2D t2d && seen.Add(t2d))
                             total += TexBytes(t2d, BppOf(t2d.format), 1f);
-                    }
                 }
             }
-
             _vramCache[entry.Name] = total;
-            return total;
         }
 
         /// <summary>All renderers that upload with this outfit: shared body (not EditorOnly),
