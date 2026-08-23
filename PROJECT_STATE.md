@@ -193,3 +193,5 @@ v3.3.0 wurde am 23. August 2026 veröffentlicht:
 - URL: `https://github.com/TheSilentD3ath/VRChat-outfit-batch-uploader/releases/tag/3.3.0`,
 - Release ist öffentlich, kein Draft und kein Prerelease,
 - Assetgröße und GitHub-Digest stimmen mit dem lokal geprüften Paket überein.
+- Das separate GitHub-Wiki wurde mit Commit `ca3659c` aktualisiert; sieben
+  bestehende Seiten wurden gezielt angepasst und `User-Interface.md` ergänzt.
