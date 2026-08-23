@@ -40,5 +40,6 @@ Outfits you haven't set per-item yet inherit these defaults; toggling an item on
 
 ## Notes
 
-- Item inclusion is stored per avatar **and** per outfit (EditorPrefs).
+- Item inclusion is stored per avatar **and** per outfit in `ProjectSettings/ShiroOutfit_data.json`; legacy EditorPrefs values are migrated automatically when first read.
 - Items count toward an outfit's [[Budget counters|Budget-Counters]] (contacts/lights) only when included for that outfit.
+- The optional [[Texture / VRAM optimizer|VRAM-Optimization]] can include the textures of the items selected for the current outfit. This setting is disabled by default because texture-import changes affect the shared texture asset globally.

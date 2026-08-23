@@ -1,6 +1,6 @@
 # VRC Outfit Batch Uploader
 
-**v3.0** · Unity 2022.x · VRChat Avatars SDK · MIT
+**v3.2** · Unity 2022.x · VRChat Avatars SDK · MIT
 
 A Unity Editor tool for VRChat avatar creators who manage multiple outfits under a single avatar and need to upload each one separately.
 
@@ -21,7 +21,7 @@ A Unity Editor tool for VRChat avatar creators who manage multiple outfits under
 - **Guided "Upload All":** Selecting a mix of ready and not-yet-set-up outfits and pressing Upload walks you through setting up the new ones (Express all, or per-outfit Express / Skip / Configure) before batching the rest.
 - **Per-outfit Items (accessories):** Pick, per outfit, which accessory objects upload with it.
 - **Per-outfit FaceEmo:** Make [FaceEmo](https://suzuryg.github.io/face-emo/) face-expression menus per outfit via capture + tag-swap.
-- **Texture / VRAM optimizer:** One-click texture compression + resolution capping using Thry's recommendations.
+- **Texture / VRAM optimizer:** One-click texture compression + resolution capping using Thry's recommendations, optionally including the items selected for that outfit.
 - **Live budget counters:** Per outfit, see Contacts (rank + 256 cap), realtime Lights, and expression Parameters (VRCFury-aware).
 - **Quality-of-life:** All/None batch selection, search + scrolling on long lists, automatic copyright-dialog confirmation.
 
@@ -52,9 +52,11 @@ Each outfit row has a **VRAM** button that optimizes that outfit's textures usin
 - **Compression** — uncompressed textures are block-compressed: `BC7` for textures with alpha or normal maps, `DXT1` otherwise (PC platform override, quality 100).
 - **Resolution** — textures larger than the configured cap (default **2048**) have their `maxTextureSize` reduced, with an optional "never reduce below" floor.
 
-It shows a preview with the estimated VRAM saved and asks for confirmation before applying. Changes are made to the texture import settings and are **not undo-able**, and because import settings are per-asset, optimizing a shared texture affects every outfit that uses it.
+It shows a preview with the estimated VRAM saved and asks for confirmation before applying. When **Also optimize the outfit's selected items (accessories)** is enabled, the plan additionally scans every item currently included for that outfit. Textures shared by the outfit and its items are processed only once.
 
-In the **New Outfit Defaults → Texture optimization** settings you can enable running this automatically during Express (with a one-time "always / don't ask again" prompt), and set the resolution cap and floor.
+Changes are made to the texture import settings and are **not undo-able**, and because import settings are per-asset, optimizing a shared texture affects every outfit that uses it. Item optimization is therefore disabled by default and must be enabled explicitly.
+
+In the **New Outfit Defaults → Texture optimization** settings you can enable running this automatically during Express (with a one-time "always / don't ask again" prompt), include selected items, and set the resolution cap and floor. The item setting applies to both the manual **VRAM** button and Express optimization.
 
 ## Items (accessories)
 

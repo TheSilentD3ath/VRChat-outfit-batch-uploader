@@ -29,6 +29,7 @@ namespace ShiroTools
         private const string NS_OPT_ASK     = "ShiroNewOutfit_OptAsk";
         private const string NS_OPT_MAXRES  = "ShiroNewOutfit_OptMaxRes";
         private const string NS_OPT_MINRES  = "ShiroNewOutfit_OptMinRes";
+        private const string NS_OPT_ITEMS   = "ShiroNewOutfit_OptItems";
 
         // ---- Runtime defaults ----
         private bool _optLoaded;
@@ -36,6 +37,7 @@ namespace ShiroTools
         private bool _nsOptAsk = true;  // ask before applying
         private int  _nsOptMaxRes = 2048;
         private int  _nsOptMinRes = 0;  // never reduce a texture below this (0 = no floor)
+        private bool _nsOptItems;        // also optimize the outfit's INCLUDED items (accessories), opt-in
 
         private void EnsureOptDefaults()
         {
@@ -45,6 +47,7 @@ namespace ShiroTools
             _nsOptAsk     = EditorPrefs.GetBool(NS_OPT_ASK, true);
             _nsOptMaxRes  = EditorPrefs.GetInt(NS_OPT_MAXRES, 2048);
             _nsOptMinRes  = EditorPrefs.GetInt(NS_OPT_MINRES, 0);
+            _nsOptItems   = EditorPrefs.GetBool(NS_OPT_ITEMS, false);
         }
 
         private void SaveOptDefaults()
@@ -53,6 +56,7 @@ namespace ShiroTools
             EditorPrefs.SetBool(NS_OPT_ASK, _nsOptAsk);
             EditorPrefs.SetInt(NS_OPT_MAXRES, Mathf.Clamp(_nsOptMaxRes, 32, 8192));
             EditorPrefs.SetInt(NS_OPT_MINRES, Mathf.Clamp(_nsOptMinRes, 0, 8192));
+            EditorPrefs.SetBool(NS_OPT_ITEMS, _nsOptItems);
         }
 
         // ============================================================
@@ -90,6 +94,9 @@ namespace ShiroTools
                     new[] { 0, 256, 512, 1024, 2048 });
             }
 
+            _nsOptItems = EditorGUILayout.ToggleLeft(
+                "Also optimize the outfit's selected items (accessories)", _nsOptItems);
+
             if (EditorGUI.EndChangeCheck())
                 SaveOptDefaults();
 
@@ -109,7 +116,7 @@ namespace ShiroTools
             EnsureOptDefaults();
             if (entry?.Go == null) return;
 
-            var plan = BuildOptimizationPlan(entry.Go);
+            var plan = BuildOptimizationPlan(entry, out int itemsInc);
             if (plan.Count == 0)
             {
                 SetStatus($"'{entry.Name}': textures already optimal — nothing to do.", MessageType.Info);
@@ -122,6 +129,7 @@ namespace ShiroTools
             bool ok = EditorUtility.DisplayDialog(
                 "Optimize textures (VRAM)",
                 BuildPlanSummary(entry.Name, plan, saved) +
+                (itemsInc > 0 ? $"\n• Includes the textures of {itemsInc} selected item(s)" : "") +
                 "\n\nThis changes the textures' import settings and is NOT undo-able. Continue?",
                 "Optimize", "Cancel");
             if (!ok) { SetStatus("Texture optimization cancelled.", MessageType.Warning); return; }
@@ -137,7 +145,7 @@ namespace ShiroTools
             EnsureOptDefaults();
             if (!_nsOptEnabled || entry?.Go == null) return;
 
-            var plan = BuildOptimizationPlan(entry.Go);
+            var plan = BuildOptimizationPlan(entry, out int itemsInc);
             if (plan.Count == 0) return;
 
             long saved = plan.Sum(p => p.SavedBytes);
@@ -148,6 +156,7 @@ namespace ShiroTools
                 int choice = EditorUtility.DisplayDialogComplex(
                     "Optimize textures (VRAM)",
                     BuildPlanSummary(entry.Name, plan, saved) +
+                    (itemsInc > 0 ? $"\n• Includes the textures of {itemsInc} selected item(s)" : "") +
                     "\n\nThis changes texture import settings and is NOT undo-able.",
                     "Optimize now", "Skip", "Always (don't ask again)");
 
@@ -175,12 +184,35 @@ namespace ShiroTools
             public long SavedBytes;
         }
 
-        private List<TexOpt> BuildOptimizationPlan(GameObject outfitGo)
+        /// <summary>Plan for an outfit: its own textures plus — if enabled in the defaults —
+        /// the textures of every item (accessory) currently selected for this outfit.</summary>
+        private List<TexOpt> BuildOptimizationPlan(OutfitEntry entry, out int itemsIncluded)
+        {
+            itemsIncluded = 0;
+            var roots = new List<GameObject> { entry.Go };
+
+            if (_nsOptItems)
+            {
+                EnsureItemsBuilt();
+                if (_items != null)
+                    foreach (var it in _items)
+                        if (it.Go != null && ItemIncludedFor(entry.Name, it.Name))
+                        {
+                            roots.Add(it.Go);
+                            itemsIncluded++;
+                        }
+            }
+
+            return BuildOptimizationPlan(roots);
+        }
+
+        private List<TexOpt> BuildOptimizationPlan(List<GameObject> roots)
         {
             var result = new List<TexOpt>();
             var seen = new HashSet<Texture2D>();
 
-            foreach (var tex in CollectOutfitTextures(outfitGo))
+            foreach (var root in roots)
+            foreach (var tex in CollectOutfitTextures(root))
             {
                 if (tex == null || !seen.Add(tex)) continue;
 

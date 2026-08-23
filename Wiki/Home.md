@@ -1,6 +1,6 @@
 # VRC Outfit Batch Uploader
 
-**v3.0** · Unity 2022.x · VRChat Avatars SDK · MIT
+**v3.2** · Unity 2022.x · VRChat Avatars SDK · MIT
 
 A Unity Editor tool for VRChat avatar creators who keep many outfits under a single avatar and upload each one as its own avatar. It handles the whole multi-outfit workflow: setting up brand-new outfits, per-outfit accessories and face expressions, performance budgets, and uploading a mix of new and existing outfits in one guided pass.
 
@@ -17,7 +17,7 @@ Open it via **Tools → Shiro → Outfit Batch Uploader**.
 - **[[New Outfit Setup|New-Outfit-Setup]]** — one-click Express / Advanced creation of new outfits
 - **[[Items (accessories)|Items]]** — per-outfit accessory selection
 - **[[FaceEmo (per outfit)|FaceEmo]]** — per-outfit face-expression menus
-- **[[Texture / VRAM optimization|VRAM-Optimization]]** — compress + cap textures
+- **[[Texture / VRAM optimization|VRAM-Optimization]]** — compress + cap outfit and optionally selected-item textures
 - **[[Budget counters|Budget-Counters]]** — Contacts, Lights, Parameters per outfit
 - **[[Blendshapes]]** — per-outfit blendshape overrides
 

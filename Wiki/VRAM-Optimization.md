@@ -11,7 +11,7 @@ Reduces an outfit's texture VRAM using the same recommendations as [Thry's Avata
 
 ## Using it
 
-- Each outfit row has a **VRAM** button. It scans that outfit's materials' textures, shows a preview (how many format/resolution changes and the estimated VRAM saved), and asks for confirmation before applying. Details are logged to the Console.
+- Each outfit row has a **VRAM** button. It scans that outfit's materials' textures and, when enabled, the items currently selected for that outfit. It shows a preview (how many format/resolution changes and the estimated VRAM saved) and asks for confirmation before applying. Details are logged to the Console.
 - It can also run automatically during **Express setup** — see defaults below.
 
 ## Defaults
@@ -22,9 +22,11 @@ In **New Outfit Defaults → Texture optimization**:
 - **Ask before applying** — when on, Express shows a one-time prompt with **Optimize now / Skip / Always (don't ask again)**.
 - **Max resolution (cap)** — 256 / 512 / 1024 / 2048 / 4096 (default 2048).
 - **Never reduce below** — an optional floor so textures aren't shrunk too far.
+- **Also optimize the outfit's selected items (accessories)** — includes the textures of items selected for the current outfit in both manual and Express optimization. This is off by default.
 
 ## ⚠️ Important
 
 - Changes are made to the **texture import settings** and are **NOT undo-able**.
 - Import settings are **per-asset**: optimizing a texture shared by several outfits affects all of them.
+- Textures shared by the outfit and one or more selected items are deduplicated and processed only once per optimization plan.
 - Only textures with a standard `TextureImporter` are touched (e.g. DDS / render textures are skipped).
