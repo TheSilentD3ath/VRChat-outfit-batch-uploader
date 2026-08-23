@@ -181,3 +181,15 @@ Der vollständige Editor-Code wurde vor der Veröffentlichung mit der realen
 Unity-2022.3.22f1-/VRChat-SDK-Assemblykonfiguration kompiliert (Exitcode 0).
 Die Oberfläche wurde zusätzlich in drei aufeinanderfolgenden Unity-Videos
 visuell geprüft und iterativ verdichtet.
+
+## Veröffentlichung v3.3.0
+
+v3.3.0 wurde am 23. August 2026 veröffentlicht:
+
+- Source-/Docs-Commit `3c28eb7`,
+- Projektgedächtnis-/Release-Commit `5aca50e`,
+- annotierter Tag `3.3.0` auf `5aca50e`,
+- GitHub-Release: `v3.3.0 — UI & Backend Optimization Update`,
+- URL: `https://github.com/TheSilentD3ath/VRChat-outfit-batch-uploader/releases/tag/3.3.0`,
+- Release ist öffentlich, kein Draft und kein Prerelease,
+- Assetgröße und GitHub-Digest stimmen mit dem lokal geprüften Paket überein.
