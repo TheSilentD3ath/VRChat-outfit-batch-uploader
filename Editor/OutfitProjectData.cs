@@ -123,14 +123,38 @@ namespace ShiroTools
             {
                 if (File.Exists(FilePath))
                 {
-                    var parsed = JsonUtility.FromJson<Root>(File.ReadAllText(FilePath));
-                    if (parsed != null && parsed.avatars != null) _root = parsed;
+                    var parsed = ParseRoot(File.ReadAllText(FilePath));
+                    if (parsed != null) _root = parsed;
+                    else throw new InvalidDataException($"{FILE_NAME} has no valid avatars collection.");
                 }
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[OutfitBatchUploader] Could not read {FILE_NAME}: {ex.Message}");
+                string backupPath = FilePath + ".bak";
+                try
+                {
+                    if (File.Exists(backupPath))
+                    {
+                        var backup = ParseRoot(File.ReadAllText(backupPath));
+                        if (backup != null)
+                        {
+                            _root = backup;
+                            Debug.LogWarning($"[OutfitBatchUploader] Recovered settings from {FILE_NAME}.bak.");
+                        }
+                    }
+                }
+                catch (Exception backupEx)
+                {
+                    Debug.LogError($"[OutfitBatchUploader] Could not recover {FILE_NAME}.bak: {backupEx.Message}");
+                }
             }
+        }
+
+        private static Root ParseRoot(string json)
+        {
+            var parsed = JsonUtility.FromJson<Root>(json);
+            return parsed?.avatars != null ? parsed : null;
         }
 
         internal static void Save()
@@ -138,11 +162,35 @@ namespace ShiroTools
             if (_root == null) return;
             try
             {
-                File.WriteAllText(FilePath, JsonUtility.ToJson(_root, true));
+                WriteAtomically(FilePath, JsonUtility.ToJson(_root, true));
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[OutfitBatchUploader] Could not write {FILE_NAME}: {ex.Message}");
+            }
+        }
+
+        /// <summary>Writes critical project state through a sibling temp file and keeps the
+        /// previous valid file as .bak. Callers must serialize/validate before invoking.</summary>
+        internal static void WriteAtomically(string path, string contents)
+        {
+            string directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+
+            string tempPath = path + ".tmp";
+            string backupPath = path + ".bak";
+            try
+            {
+                File.WriteAllText(tempPath, contents);
+                if (File.Exists(path)) File.Replace(tempPath, path, backupPath);
+                else File.Move(tempPath, path);
+            }
+            finally
+            {
+                if (File.Exists(tempPath))
+                {
+                    try { File.Delete(tempPath); } catch { }
+                }
             }
         }
 
@@ -215,6 +263,20 @@ namespace ShiroTools
             if (ov == null) o.itemOverrides.Add(new ItemOverride { name = itemName, included = included });
             else ov.included = included;
             _boolMemo[("I", avatarName, outfitName, itemName)] = included;
+            Save();
+        }
+
+        internal static void SetItemsIncluded(string avatarName, string outfitName,
+            IEnumerable<string> itemNames, bool included)
+        {
+            var o = GetOutfit(avatarName, outfitName);
+            foreach (string itemName in itemNames.Where(n => !string.IsNullOrEmpty(n)).Distinct())
+            {
+                var ov = o.itemOverrides.FirstOrDefault(x => x.name == itemName);
+                if (ov == null) o.itemOverrides.Add(new ItemOverride { name = itemName, included = included });
+                else ov.included = included;
+                _boolMemo[("I", avatarName, outfitName, itemName)] = included;
+            }
             Save();
         }
 

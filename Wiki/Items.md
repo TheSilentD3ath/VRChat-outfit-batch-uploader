@@ -31,7 +31,7 @@ So Outfit A can ship the Sword + Tail while Outfit B ships only the Tail.
 
 ## Defaults ("included on every outfit")
 
-In **New Outfit Defaults → Items (accessories)** you set:
+In **Defaults → Items (accessories)** you set:
 
 - the **Items parent** name, and
 - a per-item **"included on every outfit by default"** toggle.

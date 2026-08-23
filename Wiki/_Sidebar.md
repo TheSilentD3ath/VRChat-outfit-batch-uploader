@@ -5,6 +5,7 @@
 **Setup**
 - [[Installation]]
 - [[Getting Started|Getting-Started]]
+- [[Interface|User-Interface]]
 
 **Uploading**
 - [[Uploading]]

@@ -1,6 +1,6 @@
 # VRC Outfit Batch Uploader
 
-**v3.2** · Unity 2022.x · VRChat Avatars SDK · MIT
+**v3.3** · Unity 2022.x · VRChat Avatars SDK · MIT
 
 A Unity Editor tool for VRChat avatar creators who manage multiple outfits under a single avatar and need to upload each one separately.
 
@@ -24,10 +24,21 @@ A Unity Editor tool for VRChat avatar creators who manage multiple outfits under
 - **Texture / VRAM optimizer:** One-click texture compression + resolution capping using Thry's recommendations, optionally including the items selected for that outfit.
 - **Live budget counters:** Per outfit, see Contacts (rank + 256 cap), realtime Lights, and expression Parameters (VRCFury-aware).
 - **Quality-of-life:** All/None batch selection, search + scrolling on long lists, automatic copyright-dialog confirmation.
+- **Focused workspace:** Separate **Outfits**, **New Outfit**, and **Defaults** tabs, compact outfit cards, expandable configuration, and an always-visible batch footer.
+
+## Interface
+
+The editor window is organized around the three stages of the workflow:
+
+- **Outfits** — the complete outfit list. Compact cards keep activation, batch selection, platforms, upload actions, and performance health visible. Expand a card to edit its Blueprint ID, platform targets, blendshapes, items, FaceEmo assignment, thumbnail, and VRAM settings.
+- **New Outfit** — only outfits without a Blueprint ID, with their Express and Advanced first-upload actions.
+- **Defaults** — shared Express Setup, thumbnail, texture-optimization, item, and backup settings in a dedicated scrollable workspace.
+
+The batch summary and upload action remain visible below the outfit list instead of disappearing at the end of a long settings page. Performance ranks use a quieter warning color while hard limits and actual blockers remain red.
 
 ## New Outfit Setup (Express / Advanced)
 
-Any outfit without a Blueprint ID is treated as **new** and listed in the **New Outfit Setup** section. Instead of manually unbinding the blueprint, copying the freshly generated ID, setting tags and accepting SDK fixes, you get two paths:
+Any outfit without a Blueprint ID is treated as **new** and listed in the **New Outfit** tab. Instead of manually unbinding the blueprint, copying the freshly generated ID, setting tags and accepting SDK fixes, you get two paths:
 
 - **⚡ Express** — one click does everything: clears the `PipelineManager` blueprint ID (so the SDK registers a brand-new avatar), applies your configured defaults (name, description, release status, content-warning tags), captures a thumbnail, optionally accepts the VRChat SDK's proposed auto-fixes, builds + uploads the new avatar, and **writes the new Blueprint ID back into the tool automatically**.
 - **⚙ Advanced** — same flow, but lets you review/override the name, description, content tags, release status and thumbnail per outfit before uploading.
@@ -43,7 +54,7 @@ Any outfit without a Blueprint ID is treated as **new** and listed in the **New 
 
 > Keep the VRChat SDK Control Panel open and logged in while using Express setup. If an auto-fix triggers a script recompile / domain reload, the upload resumes automatically when the editor settles.
 
-The Express/Advanced buttons appear inline on every outfit that has no Blueprint ID yet. The **New Outfit Defaults** section only holds the shared default settings.
+The Express/Advanced buttons appear inline on every outfit that has no Blueprint ID yet. The **Defaults** tab holds the shared default settings.
 
 ## Texture optimization (VRAM)
 
@@ -56,7 +67,7 @@ It shows a preview with the estimated VRAM saved and asks for confirmation befor
 
 Changes are made to the texture import settings and are **not undo-able**, and because import settings are per-asset, optimizing a shared texture affects every outfit that uses it. Item optimization is therefore disabled by default and must be enabled explicitly.
 
-In the **New Outfit Defaults → Texture optimization** settings you can enable running this automatically during Express (with a one-time "always / don't ask again" prompt), include selected items, and set the resolution cap and floor. The item setting applies to both the manual **VRAM** button and Express optimization.
+In **Defaults → Texture optimization** you can enable running this automatically during Express (with a one-time "always / don't ask again" prompt), include selected items, and set the resolution cap and floor. The item setting applies to both the manual **VRAM** button and Express optimization.
 
 ## Items (accessories)
 
@@ -67,13 +78,13 @@ Each outfit row has its own **Items** foldout listing every accessory with an "i
 - **included** items are set to `Untagged` (uploaded),
 - **excluded** items are set to `EditorOnly` (stripped at build, not uploaded).
 
-Set the items parent name and the per-name **"included on every outfit by default"** toggles in **New Outfit Defaults → Items (accessories)**. Each outfit starts from those defaults and you can override per outfit.
+Set the items parent name and the per-name **"included on every outfit by default"** toggles in **Defaults → Items (accessories)**. Each outfit starts from those defaults and you can override per outfit.
 
 ### Budget counters (per outfit)
 
 Each outfit row shows a live one-line budget for what uploads with that outfit (its own components + its included items + shared body, ignoring `EditorOnly` and other outfits):
 
-- **◆ Contacts** — VRChat Contacts (`VRCContactSender` / `VRCContactReceiver`). Networked contacts set the performance rank, colour-coded (green = Excellent/Good, yellow = Medium/Poor, red = Very Poor); thresholds PC 8/16/24/32, Quest 2/4/8/16. Local-only contacts (e.g. many SPS senders) don't count. Also shows `total / 256` — the hard cap above which VRChat disables contacts.
+- **◆ Contacts** — VRChat Contacts (`VRCContactSender` / `VRCContactReceiver`). Networked contacts set the performance rank; hard limits and blockers remain red while ordinary performance warnings use a quieter warning color. Thresholds: PC 8/16/24/32, Quest 2/4/8/16. Local-only contacts (e.g. many SPS senders) don't count. Also shows `total / 256` — the hard cap above which VRChat disables contacts.
 - **☀ Lights** — realtime `Light` components. Avatars should have **0** (PC: 1 = Poor, 2+ = Very Poor; Quest: any light = Very Poor).
 - **⚙ Params** — expression-parameter memory (avatar-wide), `cost / 256`. If the avatar uses **VRCFury**, this is shown greyed as "(VRCFury)" because VRCFury's parameter compressor handles the 256-bit limit at build time, so the editor cost isn't the final synced cost.
 
@@ -128,6 +139,8 @@ The tool works in any VRChat avatar project that has the Avatar SDK installed, r
 ## Where settings are stored
 
 All per-avatar data (Blueprint IDs, batch & platform toggles, blendshape overrides, item selections, FaceEmo captures) lives in `ProjectSettings/ShiroOutfit_data.json`; avatar versions live in `ProjectSettings/ShiroOutfit_versions.json`. Both are outside the plugin folder, so **deleting/replacing the plugin folder on updates never loses your settings**, and the files can be backed up or versioned with the project. Settings created by older versions (stored in EditorPrefs) are migrated automatically the first time they're read. Global defaults (templates, thumbnail settings, sound toggle) remain in EditorPrefs.
+
+Both project JSON files are written atomically and retain a `.bak` recovery copy. If a main file is damaged or interrupted while being written, the plugin attempts to recover from that backup on the next load.
 
 ## License
 

@@ -260,33 +260,39 @@ namespace ShiroTools
 
         private static void ApplyPlan(List<TexOpt> plan)
         {
-            for (int i = 0; i < plan.Count; i++)
+            try
             {
-                var p = plan[i];
-                if (!(AssetImporter.GetAtPath(p.Path) is TextureImporter importer)) continue;
-
-                EditorUtility.DisplayProgressBar("Optimizing textures",
-                    $"{p.Texture.name}  ({i + 1}/{plan.Count})", (float)i / plan.Count);
-
-                bool changed = false;
-                if (p.TargetRes < p.CurrentRes)
+                for (int i = 0; i < plan.Count; i++)
                 {
-                    importer.maxTextureSize = p.TargetRes;
-                    changed = true;
+                    var p = plan[i];
+                    if (!(AssetImporter.GetAtPath(p.Path) is TextureImporter importer)) continue;
+
+                    EditorUtility.DisplayProgressBar("Optimizing textures",
+                        $"{p.Texture.name}  ({i + 1}/{plan.Count})", (float)i / plan.Count);
+
+                    bool changed = false;
+                    if (p.TargetRes < p.CurrentRes)
+                    {
+                        importer.maxTextureSize = p.TargetRes;
+                        changed = true;
+                    }
+                    if (p.ChangeFormat)
+                    {
+                        var pc = importer.GetPlatformTextureSettings("PC");
+                        pc.overridden = true;
+                        pc.format = p.TargetFormat;
+                        if (p.TargetRes < p.CurrentRes) pc.maxTextureSize = p.TargetRes;
+                        pc.compressionQuality = 100;
+                        importer.SetPlatformTextureSettings(pc);
+                        changed = true;
+                    }
+                    if (changed) importer.SaveAndReimport();
                 }
-                if (p.ChangeFormat)
-                {
-                    var pc = importer.GetPlatformTextureSettings("PC");
-                    pc.overridden = true;
-                    pc.format = p.TargetFormat;
-                    if (p.TargetRes < p.CurrentRes) pc.maxTextureSize = p.TargetRes;
-                    pc.compressionQuality = 100;
-                    importer.SetPlatformTextureSettings(pc);
-                    changed = true;
-                }
-                if (changed) importer.SaveAndReimport();
             }
-            EditorUtility.ClearProgressBar();
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
         }
 
         // ============================================================
@@ -349,7 +355,11 @@ namespace ShiroTools
             }
 
             try { ComputeVramFor(missing); }
-            catch { _vramCache[missing.Name] = 0; }   // never let the pump die
+            catch (Exception ex)
+            {
+                _vramCache[missing.Name] = 0;   // never let the pump die
+                Debug.LogWarning($"[OutfitBatchUploader] VRAM estimate failed for '{missing.Name}': {ex.Message}");
+            }
             Repaint();
         }
 

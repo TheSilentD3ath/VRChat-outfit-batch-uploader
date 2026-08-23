@@ -16,7 +16,7 @@ Reduces an outfit's texture VRAM using the same recommendations as [Thry's Avata
 
 ## Defaults
 
-In **New Outfit Defaults → Texture optimization**:
+In **Defaults → Texture optimization**:
 
 - **Optimize textures during Express** — on/off.
 - **Ask before applying** — when on, Express shows a one-time prompt with **Optimize now / Skip / Always (don't ask again)**.

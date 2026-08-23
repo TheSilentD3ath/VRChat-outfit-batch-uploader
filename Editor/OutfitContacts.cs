@@ -66,6 +66,7 @@ namespace ShiroTools
             _lShared = 0; _lOutfit.Clear(); _lItem.Clear();
             _hasVRCFury = false;
             if (_avatarRoot == null) return;
+            EnsureItemsBuilt();
 
             Transform outfitsT = _outfitsParent != null ? _outfitsParent.transform : null;
             Transform itemsT   = _itemsParent   != null ? _itemsParent.transform   : null;
@@ -77,16 +78,24 @@ namespace ShiroTools
                 if (!_hasVRCFury && IsVRCFury(comp)) _hasVRCFury = true;
 
                 bool isContact = IsContactComponent(comp);
-                bool isLight   = comp is Light;
+                bool isLight   = comp is Light light && light.lightmapBakeType != LightmapBakeType.Baked;
                 if (!isContact && !isLight) continue;
 
                 Transform tr = comp.transform;
-                if (IsUnderEditorOnly(tr)) continue;
 
                 // Where does it live: a specific outfit, a specific item, or shared?
+                // Outfit/item roots are temporarily EditorOnly whenever another outfit is active,
+                // so assign the bucket before deciding whether this component is truly stripped.
                 GameObject outfitGo = null, itemGo = null;
                 if (outfitsT != null) { var r = DirectChildUnder(outfitsT, tr); if (r != null) outfitGo = r.gameObject; }
                 if (outfitGo == null && itemsT != null) { var r = DirectChildUnder(itemsT, tr); if (r != null) itemGo = r.gameObject; }
+
+                Transform ownerRoot = outfitGo != null ? outfitGo.transform : itemGo != null ? itemGo.transform : null;
+                if (ownerRoot != null)
+                {
+                    if (IsUnderEditorOnlyBelowOwner(tr, ownerRoot)) continue;
+                }
+                else if (IsUnderEditorOnly(tr)) continue;
 
                 if (isContact)
                 {
@@ -154,6 +163,15 @@ namespace ShiroTools
             return cur;
         }
 
+        /// <summary>Checks explicitly stripped descendants while ignoring the owner root's
+        /// temporary EditorOnly tag, which only reflects the currently active outfit.</summary>
+        private static bool IsUnderEditorOnlyBelowOwner(Transform t, Transform ownerRoot)
+        {
+            for (Transform cur = t; cur != null && cur != ownerRoot; cur = cur.parent)
+                if (cur.CompareTag("EditorOnly")) return true;
+            return false;
+        }
+
         // ---- type detection (reflection, no hard SDK dependency) ----
         private static bool IsContactComponent(Component c)
         {
@@ -190,6 +208,7 @@ namespace ShiroTools
         // ============================================================
         private static readonly Color _cGreen  = new Color(0.45f, 0.85f, 0.45f);
         private static readonly Color _cYellow = new Color(0.95f, 0.82f, 0.30f);
+        private static readonly Color _cPoor   = new Color(0.82f, 0.55f, 0.32f);
         private static readonly Color _cRed    = new Color(0.95f, 0.45f, 0.45f);
         private static readonly Color _cGray   = new Color(0.62f, 0.62f, 0.62f);
 
@@ -210,7 +229,7 @@ namespace ShiroTools
                 string crank; Color ccol;
                 if (net <= good)      { crank = net <= exc ? "Excellent" : "Good"; ccol = _cGreen; }
                 else if (net <= poor) { crank = net <= med ? "Medium" : "Poor";    ccol = _cYellow; }
-                else                  { crank = "Very Poor";                       ccol = _cRed; }
+                else                  { crank = "Very Poor";                       ccol = _cPoor; }
                 bool overHard = total >= CONTACT_HARD_LIMIT;
                 if (overHard) ccol = _cRed;
                 ColoredLabel($"◆ Contacts {net} ({crank}) · {total}/{CONTACT_HARD_LIMIT}{(overHard ? " ⚠" : "")}",
@@ -220,7 +239,7 @@ namespace ShiroTools
                 GUILayout.Space(12);
 
                 // --- Lights ---
-                Color lcol = lights == 0 ? _cGreen : (pc && lights == 1 ? _cYellow : _cRed);
+                Color lcol = lights == 0 ? _cGreen : (pc && lights == 1 ? _cYellow : _cPoor);
                 ColoredLabel($"☀ Lights {lights}",
                     "Avatars should have 0 realtime lights (PC: 1 = Poor, 2+ = Very Poor; Quest: any light = Very Poor).", lcol);
 
@@ -250,7 +269,7 @@ namespace ShiroTools
                     string vrank; Color vcol;
                     if (mib <= vGood)      { vrank = mib <= vExc ? "Excellent" : "Good"; vcol = _cGreen; }
                     else if (mib <= vPoor) { vrank = mib <= vMed ? "Medium" : "Poor";    vcol = _cYellow; }
-                    else                   { vrank = "Very Poor";                        vcol = _cRed; }
+                    else                   { vrank = "Very Poor";                        vcol = _cPoor; }
                     ColoredLabel($"▦ VRAM ~{mib:0} MiB ({vrank})",
                         $"Estimated texture memory of everything uploading with this outfit " +
                         $"({(pc ? "PC" : "Quest")}: Excellent ≤{vExc:0}, Good ≤{vGood:0}, Medium ≤{vMed:0}, Poor ≤{vPoor:0} MiB). " +

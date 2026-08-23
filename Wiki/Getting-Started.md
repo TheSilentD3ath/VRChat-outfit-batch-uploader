@@ -23,6 +23,14 @@ Avatar (VRCAvatarDescriptor + PipelineManager)
 3. **Outfits parent** — the name of the GameObject holding your outfits as direct children (default `Outfits`).
 4. **Base Version** — *(optional)* a version string (e.g. `v1.2`) that gets stamped into the VRChat description of every uploaded outfit.
 
+## The three workspaces
+
+- **Outfits** contains every detected outfit in a compact list. Expand a card to edit its Blueprint ID, platforms, blendshapes, items, FaceEmo, thumbnail, or VRAM settings.
+- **New Outfit** filters the list to outfits that still need their first Blueprint ID.
+- **Defaults** contains the shared Express Setup, thumbnail, optimization, item, and backup settings.
+
+The batch upload controls stay below the scrolling outfit list so they remain accessible even on avatars with many outfits. See [[Interface|User-Interface]].
+
 ## Your first upload
 
 **Already-uploaded outfit (you have its `avtr_...` ID):**
@@ -36,7 +44,7 @@ That's it. From there, explore per-outfit [[Items]], [[FaceEmo]], [[Budget count
 
 ## Where settings live
 
-- **Blueprint IDs & per-outfit selections** → EditorPrefs (per machine), scoped by avatar + outfit name.
+- **Blueprint IDs & per-outfit selections** → `ProjectSettings/ShiroOutfit_data.json`, scoped by avatar + outfit name.
 - **Defaults** (templates, tags, thumbnail, optimization) → EditorPrefs.
-- **Base Version** → saved in your project (`ProjectSettings`).
+- **Base Version** → `ProjectSettings/ShiroOutfit_versions.json`.
 - **Tags / active state** → your scene.

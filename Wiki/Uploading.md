@@ -2,6 +2,8 @@
 
 ## Per-outfit buttons
 
+The compact card header keeps **Select**, **Ping**, **Upload**, batch inclusion, and the platform summary visible. Expand the card to edit the Blueprint ID and platform targets or access VRAM, thumbnail, blendshape, item, and FaceEmo tools.
+
 - **Select** — activates a single outfit in the scene (sets tags, Blueprint ID, blendshapes, items, FaceEmo) **without** uploading. Great for previewing what would be uploaded.
 - **Upload** — activates + uploads that single outfit (only shown once it has a Blueprint ID).
 - **⚡ Express / ⚙ Advanced** — shown when the outfit has no Blueprint ID yet. See [[New Outfit Setup|New-Outfit-Setup]].
@@ -40,3 +42,5 @@ Switching the Unity build target forces a **domain reload** (scripts recompile, 
 - A **sound** plays when the whole queue is done (toggle: "🔔 Sound when done").
 - **Validation errors** on one outfit are logged and skipped; the summary at the end lists what was skipped so you can fix and re-upload those.
 - Blendshape values are **restored** to their original state after the batch.
+- If an outfit disappears after the queue is created, it is recorded as failed rather than counted as a successful upload.
+- Queue and resume state are cleaned up after completion or cancellation.

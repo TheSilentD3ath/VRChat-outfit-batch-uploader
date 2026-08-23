@@ -88,8 +88,19 @@ namespace ShiroTools
         private bool ItemIncludedFor(string outfitName, string itemName) =>
             OutfitProjectData.GetItemIncluded(ItemAvatarKey, outfitName, itemName);
 
-        private void SetItemIncluded(string outfitName, string itemName, bool include) =>
+        private void SetItemIncluded(string outfitName, string itemName, bool include)
+        {
             OutfitProjectData.SetItemIncluded(ItemAvatarKey, outfitName, itemName, include);
+            ClearVramCache();
+            MarkBudgetsDirty();
+        }
+
+        private void SetItemsIncluded(string outfitName, IEnumerable<string> itemNames, bool include)
+        {
+            OutfitProjectData.SetItemsIncluded(ItemAvatarKey, outfitName, itemNames, include);
+            ClearVramCache();
+            MarkBudgetsDirty();
+        }
 
         // ============================================================
         //  Apply (called from ActivateOutfit with the active outfit)
@@ -150,9 +161,9 @@ namespace ShiroTools
             {
                 GUILayout.Space(14);
                 if (GUILayout.Button("All", EditorStyles.miniButton, GUILayout.Width(36)))
-                    foreach (var it in filtered) SetItemIncluded(entry.Name, it.Name, true);
+                    SetItemsIncluded(entry.Name, filtered.Select(it => it.Name), true);
                 if (GUILayout.Button("None", EditorStyles.miniButton, GUILayout.Width(40)))
-                    foreach (var it in filtered) SetItemIncluded(entry.Name, it.Name, false);
+                    SetItemsIncluded(entry.Name, filtered.Select(it => it.Name), false);
                 GUILayout.FlexibleSpace();
                 EditorGUILayout.LabelField($"{filtered.Count} shown", EditorStyles.miniLabel, GUILayout.Width(70));
             }
@@ -240,7 +251,11 @@ namespace ShiroTools
                 EditorGUI.BeginChangeCheck();
                 bool def = EditorGUILayout.ToggleLeft(it.Name, ItemDefaultOn(it.Name));
                 if (EditorGUI.EndChangeCheck())
+                {
                     OutfitProjectData.SetItemDefault(ItemAvatarKey, it.Name, def);
+                    ClearVramCache();
+                    MarkBudgetsDirty();
+                }
             }
             EditorGUILayout.EndScrollView();
         }

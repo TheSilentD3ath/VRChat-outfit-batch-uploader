@@ -92,6 +92,7 @@ namespace ShiroTools
 
         // ---- UI state ----
         private bool _nsSectionExpanded;
+        private Vector2 _nsDefaultsScroll;
         private string _nsAdvancedOutfit;           // which outfit's advanced panel is open
         private readonly Dictionary<string, AdvancedDraft> _nsDrafts = new Dictionary<string, AdvancedDraft>();
 
@@ -148,21 +149,41 @@ namespace ShiroTools
         // ============================================================
         //  GUI — drawn from OnGUI via DrawNewOutfitSetupSection()
         // ============================================================
-        private void DrawNewOutfitSetupSection()
+        private void DrawNewOutfitSetupSection(bool standalone = false)
         {
             LoadNewSetupDefaults();
 
             int newCount = _outfits.Count(o => o.Go != null && string.IsNullOrWhiteSpace(o.BlueprintId));
 
-            _nsSectionExpanded = EditorGUILayout.Foldout(
-                _nsSectionExpanded,
-                newCount > 0
-                    ? $"New Outfit Defaults  ({newCount} outfit(s) need setup — use ⚡/⚙ on each above)"
-                    : "New Outfit Defaults",
-                true, EditorStyles.foldoutHeader);
+            if (!standalone)
+            {
+                _nsSectionExpanded = EditorGUILayout.Foldout(
+                    _nsSectionExpanded,
+                    newCount > 0
+                        ? $"New Outfit Defaults  ({newCount} outfit(s) need setup — use ⚡/⚙ on each above)"
+                        : "New Outfit Defaults",
+                    true, EditorStyles.foldoutHeader);
 
-            if (!_nsSectionExpanded) return;
+                if (!_nsSectionExpanded) return;
+            }
+            else
+            {
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    EditorGUILayout.LabelField("New Outfit Defaults", EditorStyles.boldLabel);
+                    GUILayout.FlexibleSpace();
+                    if (newCount > 0)
+                        EditorGUILayout.LabelField($"{newCount} need setup", EditorStyles.miniLabel, GUILayout.Width(92));
+                }
+            }
 
+            // Keep the complete defaults page usable in short editor windows. Individual
+            // nested lists retain their own scroll views; wheel routing is registered so
+            // the main outfit list's momentum scrolling does not steal this section's input.
+            float scrollHeight = Mathf.Clamp(position.height - 220f, 180f, 520f);
+            _nsDefaultsScroll = standalone
+                ? EditorGUILayout.BeginScrollView(_nsDefaultsScroll, GUILayout.ExpandHeight(true))
+                : EditorGUILayout.BeginScrollView(_nsDefaultsScroll, GUILayout.Height(scrollHeight));
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
             {
                 EditorGUILayout.HelpBox(
@@ -187,6 +208,8 @@ namespace ShiroTools
                     "as one JSON file — for backups or moving to another project.",
                     EditorStyles.wordWrappedMiniLabel);
             }
+            EditorGUILayout.EndScrollView();
+            RegisterNestedScrollRect();
         }
 
         private void DrawDefaultsConfig()
@@ -449,14 +472,33 @@ namespace ShiroTools
                 // 1b) Optionally optimize this outfit's textures (VRAM) before uploading
                 MaybeOptimizeDuringExpress(entry);
 
-                // 2) Clear the Blueprint ID so the SDK creates a NEW avatar
+                // 2) Resolve a thumbnail before clearing the shared PipelineManager state.
+                string thumbPath = ResolveThumbnailPath(entry, draft);
+                if (string.IsNullOrEmpty(thumbPath))
+                {
+                    SetStatus("Could not produce a thumbnail — aborting.", MessageType.Error);
+                    _isExpressBusy = false;
+                    return;
+                }
+
+                // 3) Persist the complete resume record BEFORE any operation that may trigger
+                // a domain reload (scene save, asset refresh or SDK auto-fix).
+                SessionState.SetBool(SESSION_EXPRESS_PENDING, true);
+                SessionState.SetString(SESSION_EXPRESS_OUTFIT, entry.Name);
+                SessionState.SetString(SESSION_EXPRESS_THUMB, thumbPath);
+                SessionState.SetString(SESSION_EXPRESS_DESC, desc ?? "");
+                SessionState.SetString(SESSION_EXPRESS_NAME, name);
+                SessionState.SetString(SESSION_EXPRESS_TAGS, string.Join(";", tags));
+                SessionState.SetString(SESSION_EXPRESS_RELEASE, release);
+
+                // 4) Clear the Blueprint ID so the SDK creates a NEW avatar.
                 ClearBlueprintId();
 
-                // 3) Save the scene so the SDK sees the changes
+                // 5) Save the scene so the SDK sees the changes.
                 EditorSceneManager.SaveScene(SceneManager.GetActiveScene());
                 AssetDatabase.SaveAssets();
 
-                // 4) Optionally accept SDK auto-fixes (best-effort)
+                // 6) Optionally accept SDK auto-fixes (best-effort).
                 if (_nsAutoFix)
                 {
                     int fixes = TryApplySdkAutoFixes(builder);
@@ -469,30 +511,13 @@ namespace ShiroTools
                     }
                 }
 
-                // 5) Resolve a thumbnail (always required for new avatars)
-                string thumbPath = ResolveThumbnailPath(entry, draft);
-                if (string.IsNullOrEmpty(thumbPath))
-                {
-                    SetStatus("Could not produce a thumbnail — aborting.", MessageType.Error);
-                    _isExpressBusy = false;
-                    return;
-                }
-
-                // 6) Persist a resume record (in case a fix triggered a reload mid-flight)
-                SessionState.SetBool(SESSION_EXPRESS_PENDING, true);
-                SessionState.SetString(SESSION_EXPRESS_OUTFIT, entry.Name);
-                SessionState.SetString(SESSION_EXPRESS_THUMB, thumbPath);
-                SessionState.SetString(SESSION_EXPRESS_DESC, desc ?? "");
-                SessionState.SetString(SESSION_EXPRESS_NAME, name);
-                SessionState.SetString(SESSION_EXPRESS_TAGS, string.Join(";", tags));
-                SessionState.SetString(SESSION_EXPRESS_RELEASE, release);
-
                 await ContinueExpressUploadAsync();
             }
             catch (Exception ex)
             {
                 Debug.LogError("[OutfitBatchUploader] Express setup failed: " + ex);
                 SetStatus("Express setup failed: " + Truncate(ex.Message, 140), MessageType.Error);
+                CleanupTempThumb(SessionState.GetString(SESSION_EXPRESS_THUMB, ""));
                 ClearExpressState();
                 _isExpressBusy = false;
                 Repaint();
@@ -816,7 +841,23 @@ namespace ShiroTools
         /// not under an EditorOnly tag, and not inside a different outfit.</summary>
         private bool IsUploadRelevant(Transform t, OutfitEntry target)
         {
-            return !IsUnderEditorOnly(t) && !BelongsToOtherOutfit(t, target);
+            if (_outfitsParent != null)
+            {
+                var owner = DirectChildUnder(_outfitsParent.transform, t);
+                if (owner != null)
+                    return owner.gameObject == target?.Go && !IsUnderEditorOnlyBelowOwner(t, owner);
+            }
+
+            EnsureItemsBuilt();
+            if (_itemsParent != null)
+            {
+                var owner = DirectChildUnder(_itemsParent.transform, t);
+                if (owner != null)
+                    return target != null && ItemIncludedFor(target.Name, owner.name) &&
+                           !IsUnderEditorOnlyBelowOwner(t, owner);
+            }
+
+            return !IsUnderEditorOnly(t);
         }
 
         /// <summary>True if the transform or any ancestor (up to the avatar root) is tagged "EditorOnly".</summary>
@@ -966,9 +1007,17 @@ namespace ShiroTools
         {
             try
             {
-                if (!string.IsNullOrEmpty(path) &&
-                    path.StartsWith(Path.GetTempPath()) && File.Exists(path))
-                    File.Delete(path);
+                if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+                string fullPath = Path.GetFullPath(path);
+                string tempRoot = Path.GetFullPath(Path.GetTempPath())
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string parent = Path.GetDirectoryName(fullPath)?.TrimEnd(
+                    Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string fileName = Path.GetFileName(fullPath);
+                if (string.Equals(parent, tempRoot, StringComparison.OrdinalIgnoreCase) &&
+                    fileName.StartsWith("shiro_thumb_", StringComparison.Ordinal) &&
+                    fileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+                    File.Delete(fullPath);
             }
             catch { /* ignore */ }
         }

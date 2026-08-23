@@ -22,7 +22,7 @@ Same flow, but opens a panel to review/override **name, description, content tag
 
 ## Defaults
 
-Configured once in **New Outfit Defaults** (saved in EditorPrefs) and applied by Express:
+Configured once in the dedicated **Defaults** tab (saved in EditorPrefs) and applied by Express:
 
 - **Avatar name template** & **Description template** — support `{outfit}` and `{avatar}` tokens.
 - **Release status** — `private` or `public`.
