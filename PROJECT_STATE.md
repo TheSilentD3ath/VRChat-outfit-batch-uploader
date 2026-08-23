@@ -73,10 +73,111 @@ veralteten doppelten Ordnerpfad und enthält Plugin-Code, Wiki, Lizenz sowie die
 v3.2-Release Notes. Interne Codex-Dateien und projektspezifischer Zustand sind
 nicht enthalten.
 
+## Unveröffentlichter Stabilitätsstand nach v3.2.0
+
+Nach einem vollständigen Review aller Editor-C#-Dateien wurde am 23. August
+2026 ein noch nicht committeter Stabilitäts-Pass umgesetzt:
+
+- Beim Outfitwechsel werden alle vom Tool verwalteten Blendshapes zunächst auf
+  null gesetzt, bevor die Ziel-Overrides angewendet werden.
+- Ein Avatarwechsel kann keinen Skin-Renderer des vorherigen Avatars mehr
+  behalten.
+- Contact-/Light-Budgets werden unabhängig vom momentan aktiven Outfit in
+  Outfit- und Item-Buckets erfasst; nur wirklich untergeordnete
+  `EditorOnly`-Teilbäume werden ausgeschlossen. Rein gebackene Lights zählen
+  nicht mehr als Laufzeit-Light.
+- Abgelehnte Unity-Plattformwechsel brechen kontrolliert ab.
+- Verschwundene Outfits werden im Batch als fehlgeschlagen statt erfolgreich
+  gezählt; Session-Queue-Daten werden nach Abschluss/Abbruch bereinigt.
+- Item-Änderungen invalidieren Budget/VRAM sofort; All/None speichert gebündelt.
+- Projekt- und Versions-JSON werden atomar mit `.tmp`/`.bak` geschrieben und
+  können bei beschädigter Hauptdatei aus dem Backup wiederhergestellt werden.
+- Express speichert seinen Resume-Datensatz vor möglichen Domain Reloads und
+  erzeugt das Thumbnail vor dem Leeren der Blueprint-ID.
+- Nur tatsächlich vom Tool erzeugte `shiro_thumb_*.png`-Dateien werden als
+  temporäre Thumbnails gelöscht.
+- Texture-Optimierung räumt den Progressbar auch bei Fehlern auf und meldet
+  fehlgeschlagene VRAM-Schätzungen.
+- Die gesamte aufgeklappte Seite `New Outfit Defaults` besitzt einen eigenen,
+  an die Fensterhöhe angepassten Scrollbereich; ihre verschachtelten Listen
+  behalten die bestehende Scroll-Routenlogik.
+
+Die sechs geänderten Plugin-Dateien wurden gezielt in das freigegebene
+Unity-Testziel synchronisiert. Ein isolierter Compile der vollständigen
+`Assembly-CSharp-Editor` mit Unity 2022.3.22f1 und der vorhandenen
+Bee-Response-Datei endete mit Exitcode 0. Zwei CS8032-Warnungen betrafen nur die
+außerhalb von Bee gestarteten Unity-Source-Generatoren; der Plugin-Code hatte
+keine Compilerfehler. Unitys laufender Editor hatte Auto-Refresh während der
+Prüfung nicht ausgeführt.
+
 ## Nächste Schritte
 
 1. Bei der nächsten funktionalen Änderung den synchronisierten Pluginstand im
    Unity-Testziel kompilieren und einen passenden Editor-Workflow prüfen.
-2. Prüfen, wie Git-Arbeitskopie und Unity-Testziel künftig teilautomatisiert,
+2. Die wichtigsten Zustandswechsel (Outfit/Blendshape, Avatarwechsel,
+   per-Outfit-Budgets und Express-Resume) bei Gelegenheit manuell im Editor
+   regressionsprüfen.
+3. Prüfen, wie Git-Arbeitskopie und Unity-Testziel künftig teilautomatisiert,
    aber ohne pauschales Spiegeln synchronisiert werden sollen.
-3. Vor dem nächsten Release Dokumentation und Versionsangaben abgleichen.
+4. Vor dem nächsten Release Dokumentation und Versionsangaben abgleichen.
+
+## Unveröffentlichte UI-Neustrukturierung
+
+Am 23. August 2026 wurde als erster Schritt gegen die zunehmende Dichte des
+Hauptfensters die bisherige lange Einzelseite in drei Arbeitsbereiche geteilt:
+
+- `Outfits` zeigt die vollständige Outfitliste.
+- `New Outfit` filtert auf Outfits ohne Blueprint-ID und erklärt den
+  Express-/Advanced-Erstupload.
+- `Defaults` zeigt die komplette Konfiguration für neue Outfits in einer
+  eigenen, die verfügbare Fensterhöhe nutzenden Scrollansicht.
+
+Der Batch-Upload bleibt in den beiden outfitbezogenen Ansichten als feste
+Fußsektion unter der flexibel scrollenden Liste sichtbar. Uploadlogik und
+persistiertes Projektdatenformat wurden dabei nicht verändert.
+
+Nach Sichtprüfung der neuen Navigation per Unity-Video wurden außerdem die
+Outfitkarten verdichtet. Im geschlossenen Zustand zeigen sie nur noch Name,
+Aktivstatus, Batch-Auswahl, Zielplattformen, Primäraktionen und die zentrale
+Performance-Zusammenfassung. Blueprint-ID, VRAM-/Thumbnail-Aktionen,
+Plattformbearbeitung, Uploadhistorie, Blendshapes, Items und FaceEmo liegen in
+einer aufklappbaren Detailansicht. Outfits ohne Blueprint-ID behalten ihre
+Express-/Advanced-Erstupload-Aktionen auch im kompakten Zustand.
+
+Eine weitere Video-Sichtprüfung bestätigte stabile Kopfzeilen und die deutlich
+höhere Informationsdichte. Um die dadurch entstandene durchgehend rote
+Warnfläche zu entschärfen, werden reine `Very Poor`-Performancebewertungen für
+Contacts, Lights und VRAM nun gedämpft orange dargestellt. Rot bleibt harten
+Limits beziehungsweise echten Blockern vorbehalten.
+
+`Editor/OutfitBatchUploader.cs` und `Editor/OutfitNewSetup.cs` wurden gezielt
+in den freigegebenen Pluginordner auf `D:` synchronisiert. Der isolierte
+Compile der vollständigen `Assembly-CSharp-Editor` mit Unity 2022.3.22f1 und
+der vorhandenen Bee-Response-Datei endete mit Exitcode 0. Die zwei bekannten
+CS8032-Warnungen betreffen nur die außerhalb von Bee gestarteten Unity-
+Source-Generatoren.
+
+## Release v3.3.0 vorbereitet
+
+Der UI- und Backend-Stabilitätsstand wurde als öffentlicher Source-/Docs-Commit
+`3c28eb7` (`feat: optimize plugin UI and backend stability`) zusammengeführt.
+README und Wiki beschreiben die drei Arbeitsbereiche, kompakten Outfitkarten,
+die feste Batch-Fußsektion und die Backend-Sicherheitsverbesserungen. Eine neue
+Wiki-Seite `User-Interface.md` und englische `RELEASE_NOTES_v3.3.md` wurden
+ergänzt.
+
+Das Release-Asset
+`VRChat-outfit-batch-uploader-3.3.0.unitypackage` wurde im historischen
+kompatiblen Doppelordner-Layout gebaut und vollständig entpackt geprüft:
+
+- 33 Unity-Assets mit vorhandenen `.meta`-GUIDs,
+- 127687 Bytes,
+- SHA-256 `3CF8A1D07E4A9354965E671FAE3FA8D34F3DB4238733C5842E4B571B720A323E`,
+- enthält Editor-Code, Sounds, README, Wiki, Lizenz und Release Notes,
+- enthält kein Projektgedächtnis, keine Arbeitsregeln und keine
+  avatarspezifischen `ProjectSettings` oder Upload-Logs.
+
+Der vollständige Editor-Code wurde vor der Veröffentlichung mit der realen
+Unity-2022.3.22f1-/VRChat-SDK-Assemblykonfiguration kompiliert (Exitcode 0).
+Die Oberfläche wurde zusätzlich in drei aufeinanderfolgenden Unity-Videos
+visuell geprüft und iterativ verdichtet.
