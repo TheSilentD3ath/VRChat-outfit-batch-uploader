@@ -42,10 +42,9 @@ gestellter Express-Workflow nach einem Plugin-Update nicht ohne explizites
 Opt-in erstmals Item-Texturen verändern. Ein bereits gespeicherter
 `ShiroNewOutfit_OptItems`-Wert bleibt wirksam.
 
-README, Wiki und vorbereitete `RELEASE_NOTES_v3.2.md` beschreiben die Funktion,
-die Deduplizierung und die globalen Auswirkungen gemeinsam verwendeter
-TextureImporter-Einstellungen. Noch kein Commit, Push, Tag oder Release wurde
-erstellt.
+README, Wiki und `RELEASE_NOTES_v3.2.md` beschreiben die Funktion, die
+Deduplizierung und die globalen Auswirkungen gemeinsam verwendeter
+TextureImporter-Einstellungen.
 
 Am 23. August 2026 wurde ausschließlich
 `Editor/OutfitTextureOptimizer.cs` aus der Git-Arbeitskopie in den freigegebenen
@@ -56,13 +55,28 @@ Unity-Prozess sichtbar, `Editor.log`, `Temp/UnityLockfile` und die zuletzt
 gebauten ScriptAssemblies stammen vom 8. August 2026. Der Kompilierungs- und
 manuelle Regressionstest bleibt daher offen.
 
+## Veröffentlichung v3.2.0
+
+Die vorbereitete Änderung wurde am 23. August 2026 veröffentlicht:
+
+- Feature-Commit `c1adec8` trennt Quellcode und öffentliche Dokumentation.
+- Projektgedächtnis-Commit `79ae6b0` enthält Arbeitsregeln, Status und
+  Migrationsübergaben.
+- Annotierter Git-Tag `3.2.0` zeigt auf `79ae6b0`.
+- GitHub-Release: `v3.2.0 — Selected-item VRAM optimization`.
+- Release-Asset: `VRChat-outfit-batch-uploader-3.2.0.unitypackage`, 113351
+  Bytes, SHA-256
+  `2AA0E1969CD8546341CC9CE597212C42F06F552FAB58B9854C7C25D51E59281E`.
+
+Das Unitypackage folgt dem historischen v3.1.0-Importlayout unter dem weiterhin
+veralteten doppelten Ordnerpfad und enthält Plugin-Code, Wiki, Lizenz sowie die
+v3.2-Release Notes. Interne Codex-Dateien und projektspezifischer Zustand sind
+nicht enthalten.
+
 ## Nächste Schritte
 
-1. Die vorbereitete Item-VRAM-Änderung in einem Unity-Testprojekt gegen die in
-   der Handoff-Datei genannten Fälle regressionsprüfen.
-2. Nach Freigabe Quellcode/Nutzerdokumentation und Projektgedächtnis in logisch
-   getrennten Commits ablegen; für die neue Nutzerfunktion ist v3.2.0 sinnvoll.
-3. Unity mit `Main avi` öffnen beziehungsweise den laufenden Prozess sichtbar
-   machen, die bereits synchronisierte Datei kompilieren lassen und die
-   Console auf Compilerfehler prüfen.
-4. Vor dem nächsten Release Dokumentation und Versionsangaben abgleichen.
+1. Bei der nächsten funktionalen Änderung den synchronisierten Pluginstand im
+   Unity-Testziel kompilieren und einen passenden Editor-Workflow prüfen.
+2. Prüfen, wie Git-Arbeitskopie und Unity-Testziel künftig teilautomatisiert,
+   aber ohne pauschales Spiegeln synchronisiert werden sollen.
+3. Vor dem nächsten Release Dokumentation und Versionsangaben abgleichen.

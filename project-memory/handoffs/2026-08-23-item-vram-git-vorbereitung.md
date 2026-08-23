@@ -81,3 +81,21 @@ Vor Veröffentlichung weiterhin empfohlen:
 
 Die Erweiterung ist eine neue sichtbare Funktion und Einstellung; gegenüber
 dem öffentlichen v3.1.x-Stand ist daher v3.2.0 sinnvoller als ein Patch-Release.
+
+## Veröffentlichung
+
+Der Nutzer hat anschließend Commit, Push, Tag und Release ausdrücklich
+freigegeben. Durchgeführt wurden:
+
+- `c1adec8 feat: include selected items in VRAM optimization`
+- `79ae6b0 docs: add Codex project state and migration handoffs`
+- annotierter und gepushter Tag `3.2.0` auf `79ae6b0`
+- öffentliches GitHub-Release
+  `v3.2.0 — Selected-item VRAM optimization`
+- Asset `VRChat-outfit-batch-uploader-3.2.0.unitypackage`
+
+Das Paket wurde aus dem getaggten Stand im gleichen GUID-/Pfadformat wie das
+öffentliche v3.1.0-Paket erzeugt. Es enthält 30 Plugin-Einträge und keine
+internen Codex-Dateien. Lokaler und von GitHub gemeldeter Asset-Digest stimmen
+überein: SHA-256
+`2AA0E1969CD8546341CC9CE597212C42F06F552FAB58B9854C7C25D51E59281E`.
