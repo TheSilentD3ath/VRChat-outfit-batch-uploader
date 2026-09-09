@@ -5,5 +5,6 @@
 .DS_Store
 Thumbs.db
 
-# EditorPrefs are local — not committed
-# (Blueprint IDs are stored there, not in files)
+# Per-project data (Blueprint IDs, blendshapes, versions) lives in the
+# user's Unity project under ProjectSettings/ShiroOutfit_*.json — never in
+# this repo. EditorPrefs only holds global defaults (templates, sound toggle).
