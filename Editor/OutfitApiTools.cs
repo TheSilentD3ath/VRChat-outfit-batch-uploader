@@ -74,30 +74,19 @@ namespace ShiroTools
         {
             var results = new List<VRCAvatar>();
 
-            var method = typeof(VRCApi).GetMethods(BindingFlags.Public | BindingFlags.Static)
-                .FirstOrDefault(m => m.Name == "GetAvatars");
+            var method = SdkCompat.GetAvatarsMethod;
             if (method == null)
                 throw new Exception("This SDK version has no VRCApi.GetAvatars — paste Blueprint IDs manually.");
 
-            var pars = method.GetParameters();
             const int PAGE = 50;
 
             for (int offset = 0; offset < 1000; )
             {
-                object[] args = new object[pars.Length];
-                for (int i = 0; i < pars.Length; i++)
-                {
-                    var p = pars[i];
-                    string pn = (p.Name ?? "").ToLowerInvariant();
-                    if (p.ParameterType == typeof(int) && pn.Contains("offset"))      args[i] = offset;
-                    else if (p.ParameterType == typeof(int))                          args[i] = PAGE;   // count / number / n
-                    else if (p.HasDefaultValue)                                       args[i] = p.DefaultValue;
-                    else args[i] = p.ParameterType.IsValueType ? Activator.CreateInstance(p.ParameterType) : null;
-                }
-
-                var task = (Task)method.Invoke(null, args);
-                await task;
-                object result = task.GetType().GetProperty("Result")?.GetValue(task);
+                // SdkCompat binds the arguments by parameter name/type and raises an explicit
+                // error when the SDK hands back a Task without a Result (instead of paging
+                // out silently on an empty list).
+                object result = await SdkCompat.InvokeTaskWithResultAsync(
+                    method, SdkCompat.BuildGetAvatarsArgs(method, PAGE, offset), "Fetch my avatars");
 
                 var page = ExtractAvatars(result);
                 if (page.Count == 0) break;
@@ -233,27 +222,9 @@ namespace ShiroTools
 
                 var avatar = await VRCApi.GetAvatar(entry.BlueprintId);
 
-                // VRCApi.UpdateAvatarImage via reflection (parameter order/name varies per SDK version)
-                var method = typeof(VRCApi).GetMethods(BindingFlags.Public | BindingFlags.Static)
-                    .FirstOrDefault(m => m.Name == "UpdateAvatarImage");
-                if (method == null)
-                    throw new Exception("This SDK version has no VRCApi.UpdateAvatarImage.");
-
-                var pars = method.GetParameters();
-                object[] args = new object[pars.Length];
-                for (int i = 0; i < pars.Length; i++)
-                {
-                    var p = pars[i];
-                    string pn = (p.Name ?? "").ToLowerInvariant();
-                    if (p.ParameterType == typeof(string) && pn.Contains("id"))          args[i] = entry.BlueprintId;
-                    else if (p.ParameterType == typeof(string))                          args[i] = thumbPath;   // pathToImage
-                    else if (p.ParameterType == typeof(VRCAvatar))                       args[i] = avatar;
-                    else if (p.HasDefaultValue)                                          args[i] = p.DefaultValue;
-                    else args[i] = p.ParameterType.IsValueType ? Activator.CreateInstance(p.ParameterType) : null;
-                }
-
-                var task = (Task)method.Invoke(null, args);
-                await task;
+                // VRCApi.UpdateAvatarImage — parameter order/name varies per SDK version,
+                // so SdkCompat binds them by name/type.
+                await SdkCompat.UpdateAvatarImageAsync(entry.BlueprintId, thumbPath, avatar);
 
                 LogUpload($"OK    {entry.Name} (thumbnail update) → {entry.BlueprintId}");
                 SetStatus($"✓ Thumbnail updated for '{entry.Name}'.", MessageType.Info);

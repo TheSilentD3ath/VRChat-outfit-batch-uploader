@@ -15,7 +15,6 @@ using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEditor;
@@ -102,6 +101,7 @@ namespace ShiroTools
         private List<GameObject>     _avatarsInScene   = new List<GameObject>();
         [SerializeField] private SkinnedMeshRenderer _skinRenderer;
         private GameObject           _outfitsParent;
+        private GameObject           _uiStateAvatar;    // which avatar the name-keyed UI caches belong to
         private List<OutfitEntry>    _outfits          = new List<OutfitEntry>();
         private string               _outfitsParentName = DEFAULT_PARENT_NAME;
         private Vector2              _scroll;
@@ -179,8 +179,22 @@ namespace ShiroTools
             StopVramPump();
             StopScrollAnim();
             StopConsentWatcher();
-            _cts?.Dispose();
-            _cts = null;
+            // NOTE: _cts is deliberately left alone here. OnDisable also fires when the window
+            // is docked/undocked or the domain reloads mid-batch — disposing or nulling it there
+            // made the still-running batch loop throw (ObjectDisposedException /
+            // NullReferenceException) on its next await instead of continuing or resuming.
+            // A real close is handled in OnDestroy.
+        }
+
+        /// <summary>Only fires when the window is really closed (unlike OnDisable, which also
+        /// fires on docking and domain reloads). A batch task outlives the window, so cancel it
+        /// here — the loop then unwinds through OperationCanceledException into CancelBatch(),
+        /// which restores the blendshapes and the initial platform instead of leaving both
+        /// half-applied. The source itself stays alive so pending awaits cancel cleanly; the
+        /// next batch start disposes and replaces it.</summary>
+        private void OnDestroy()
+        {
+            _cts?.Cancel();
         }
 
         /// <summary>Scene structure changed → cached VRAM values and budget buckets are stale.</summary>
@@ -311,11 +325,34 @@ namespace ShiroTools
         }
 
         /// <summary>
+        /// Every per-outfit cache and UI state in this tool is keyed by the outfit NAME, and
+        /// outfit names repeat across avatars ("Casual", "Swim", …). Switching avatars must
+        /// therefore drop them, or the new avatar inherits the previous one's VRAM numbers,
+        /// budget buckets, expanded rows — and its Express/Advanced draft, which decides the
+        /// name, description and content tags a brand-new avatar is published with.
+        /// Guarded on the avatar actually changing so retyping the outfits-parent name
+        /// (which also rebuilds the list) does not throw away open drafts.
+        /// </summary>
+        private void ResetPerAvatarUiStateIfAvatarChanged()
+        {
+            if (_uiStateAvatar == _avatarRoot) return;
+            _uiStateAvatar = _avatarRoot;
+
+            ResetItemUiState();
+            ResetFaceEmoUiState();
+            ResetNewSetupUiState();
+            ClearVramCache();
+            MarkBudgetsDirty();
+        }
+
+        /// <summary>
         /// Rebuilds the outfit list from the currently selected avatar root.
         /// Call this whenever the avatar selection or outfits-parent-name changes.
         /// </summary>
         private void RebuildOutfitList()
         {
+            ResetPerAvatarUiStateIfAvatarChanged();
+
             _outfitsParent = null;
             _outfits.Clear();
 
@@ -1182,26 +1219,8 @@ namespace ShiroTools
                 return;
             }
 
-            // Unity 2022 internal audio preview — reached via reflection since AudioUtil is not public
-            try
-            {
-                var audioUtil  = typeof(AudioImporter).Assembly.GetType("UnityEditor.AudioUtil");
-                var playMethod = audioUtil?.GetMethod(
-                    "PlayPreviewClip",
-                    BindingFlags.Static | BindingFlags.Public,
-                    null,
-                    new[] { typeof(AudioClip), typeof(int), typeof(bool) },
-                    null);
-
-                if (playMethod != null)
-                    playMethod.Invoke(null, new object[] { clip, 0, false });
-                else
-                    Debug.LogWarning("[OutfitBatchUploader] PlayPreviewClip not found — Unity may have renamed it.");
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning("[OutfitBatchUploader] Could not play confirm sound: " + ex.Message);
-            }
+            // Unity's AudioUtil is internal — reached through the SdkCompat reflection layer.
+            SdkCompat.PlayPreviewClip(clip);
         }
 
         // ---- Copyright pre-consent ----
@@ -1223,32 +1242,13 @@ namespace ShiroTools
 
             if (!confirmed) return false;
 
-            // VRCCopyrightAgreement.Agree() is internal — reached via reflection
-            var agreeMethod = typeof(VRCCopyrightAgreement).GetMethod(
-                "Agree",
-                BindingFlags.NonPublic | BindingFlags.Static);
-
-            if (agreeMethod == null)
-            {
-                Debug.LogWarning("[OutfitBatchUploader] Could not find VRCCopyrightAgreement.Agree via reflection. " +
-                                 "The SDK consent dialog will appear normally instead.");
-                return true;   // still proceed — SDK dialog will handle it
-            }
-
+            // VRCCopyrightAgreement.Agree() is internal — reached through SdkCompat, which
+            // warns once and falls back to the SDK's own dialog when the method is gone.
             foreach (var id in blueprintIds.Where(id => !string.IsNullOrWhiteSpace(id)))
             {
-                try
-                {
-                    var task = (Task<bool>)agreeMethod.Invoke(null, new object[] { id });
-                    bool ok = await task;
-                    if (!ok)
-                        Debug.LogWarning($"[OutfitBatchUploader] Pre-consent API call returned false for {id}. " +
-                                         "SDK may still show its own dialog for this outfit.");
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[OutfitBatchUploader] Pre-consent failed for {id}: {ex.Message}");
-                }
+                if (!await SdkCompat.AgreeCopyrightAsync(id))
+                    Debug.LogWarning($"[OutfitBatchUploader] Pre-consent API call returned false for {id}. " +
+                                     "SDK may still show its own dialog for this outfit.");
             }
 
             return true;
@@ -1426,11 +1426,18 @@ namespace ShiroTools
             _isBatchUploading = true;
             Repaint();
 
+            // Capture the token source for THIS run. _cts is replaced on every batch start and
+            // cancelled when the window closes, so reading the field again inside the loop can
+            // hand a later await a different (or missing) source than the one it started on.
+            var cts = _cts;
+            if (cts == null) _cts = cts = new CancellationTokenSource();
+            CancellationToken token = cts.Token;
+
             try
             {
                 while (true)
                 {
-                    if (_cts != null && _cts.IsCancellationRequested)
+                    if (token.IsCancellationRequested)
                     {
                         CancelBatch();
                         return;
@@ -1496,7 +1503,7 @@ namespace ShiroTools
                     FlushScene();
                     _batchSubProgress = 0.3f;
                     Repaint();
-                    await Task.Delay(1500, _cts.Token);
+                    await Task.Delay(1500, token);
 
                     // Double-check platform before upload safeguard
                     if (GetCurrentPlatform() != platform)
@@ -1512,7 +1519,7 @@ namespace ShiroTools
                     if (!VRCSdkControlPanel.TryGetBuilder<IVRCSdkAvatarBuilderApi>(out var builder))
                         throw new Exception("SDK Builder not available.");
                     
-                    var avatar = await VRCApi.GetAvatar(blueprintId, cancellationToken: _cts.Token);
+                    var avatar = await VRCApi.GetAvatar(blueprintId, cancellationToken: token);
 
                     // Stamp the version into the description if one was typed in (not blank)
                     string versionToSet = SessionState.GetString(SESSION_BATCH_VERSION, ""); // Use the version captured at batch start
@@ -1529,7 +1536,7 @@ namespace ShiroTools
                         AvatarVersionManager.SetVersion(blueprintId, versionToSet);
                     }
 
-                    await builder.BuildAndUpload(_avatarRoot, avatar, cancellationToken: _cts.Token);
+                    await builder.BuildAndUpload(_avatarRoot, avatar, cancellationToken: token);
 
                     // Successful upload! Pop from queue
                     LogUpload($"OK    {outfitName} ({platform}) → {blueprintId}" +
@@ -1542,7 +1549,7 @@ namespace ShiroTools
                     SessionState.SetInt(SESSION_BATCH_INDEX, currentIndex + 1);
 
                     if (queue.Count > 0)
-                        await Task.Delay(2000, _cts.Token);
+                        await Task.Delay(2000, token);
                 }
             }
             catch (OperationCanceledException)

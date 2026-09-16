@@ -75,6 +75,17 @@ namespace ShiroTools
                 _items.Add(new ItemEntry { Go = child.gameObject, Name = child.gameObject.name });
         }
 
+        /// <summary>Drops the per-avatar item UI state. Keys are outfit NAMES, so without this
+        /// a second avatar with an identically named outfit inherits the first one's rows.</summary>
+        private void ResetItemUiState()
+        {
+            _outfitItemsExpanded.Clear();
+            _outfitItemsSearch.Clear();
+            _outfitItemsScroll.Clear();
+            _itemDefaultsSearch = "";
+            _itemDefaultsScroll = Vector2.zero;
+        }
+
         // ============================================================
         //  Per-outfit include state (project-local JSON, survives plugin updates;
         //  legacy EditorPrefs values are migrated on first read)
