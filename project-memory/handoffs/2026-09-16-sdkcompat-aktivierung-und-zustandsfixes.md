@@ -117,8 +117,88 @@ tatsächlich entfernt. `CHANGELOG.md` bleibt die konsolidierte Quelle.
 - Nicht angefasst und weiterhin offen: Dateigröße von `OutfitBatchUploader.cs`,
   Doppelmodell `OutfitEntry`/`OutfitData`, namensbasierte Identität,
   `FlushScene()` speichert ungefragt, fehlende Tests/CI, fehlendes `.asmdef`,
-  JSON-Schreibvorgang pro Tastendruck in den Textfeldern für Blueprint-ID,
-  Version und Outfits-Parent, unterschiedlicher Umfang von VRAM-Anzeige und
-  VRAM-Optimierung, langsamer `ShaderUtil`-Pfad in `CollectOutfitTextures`,
-  `_expressQuietMode` bei frühen Returns, Texture-Leak in `MakeTex`, fehlender
+  unterschiedlicher Umfang von VRAM-Anzeige und VRAM-Optimierung, fehlender
   Dry-Run-Check auf doppelte Avatarnamen.
+
+---
+
+## Nachtrag desselben Tages: Eingabe-, Performance- und Lebenszyklusfixes
+
+### Textfelder schreiben nicht mehr pro Tastendruck
+
+Vier Felder committeten bei jedem Zeichen. `EditorGUILayout.DelayedTextField`
+löst jetzt erst bei Enter oder Fokusverlust aus:
+
+- Blueprint-ID (`OutfitBatchUploader.cs`): `OutfitProjectData.Save()`
+  serialisiert und ersetzt den **gesamten** Store atomar — das lief bisher
+  einmal pro getipptem Zeichen. Nebeneffekt: die Formatwarnung erscheint nicht
+  mehr während des Tippens beziehungsweise bei halb eingefügten IDs.
+- Base Version (`OutfitBatchUploader.cs`): `AvatarVersionManager.SetVersion`
+  schreibt `ShiroOutfit_versions.json` über Temp-Datei, `File.Replace` und
+  `.bak` neu.
+- Outfits-Parent (`OutfitBatchUploader.cs`) und Items-Parent
+  (`OutfitItems.cs`): zusätzlich zum EditorPrefs-Write lief ein vollständiger
+  Listen-Rebuild pro Zeichen, und Zwischenstände wie `Outfi` finden nichts —
+  die Outfit- beziehungsweise Item-Liste leerte sich sichtbar beim Tippen. Das
+  Items-Feld war im ursprünglichen Review übersehen worden und fiel erst bei der
+  abschließenden Prüfung auf.
+
+Die reinen Filterfelder (Blendshape-Suche, Item-Suche, Item-Defaults-Suche)
+bleiben bewusst live; sie lösen keinen IO aus. Die Entwurfsfelder in
+`DrawAdvancedPanel` und `OutfitConfigWindow` schreiben nur in speicherinterne
+`AdvancedDraft`-Objekte und bleiben ebenfalls live.
+
+### Langsamer Shader-Pfad entfernt
+
+`CollectOutfitTextures` in `OutfitTextureOptimizer.cs` iterierte weiterhin über
+`ShaderUtil.GetPropertyCount`/`GetPropertyType`/`GetPropertyName`. Der
+Dateikopf erklärt selbst, warum das auf Poiyomi und lilToon zu langsam ist, und
+`ComputeVramFor` nutzt deshalb längst `Material.GetTexturePropertyNames()`.
+Genau der Optimizer-Pfad, der beim VRAM-Button und in Express läuft, zahlte die
+Kosten noch. Gleiche Texturmenge, jetzt derselbe Weg wie die Anzeige.
+
+### Texture-Leak im Zeilenhintergrund
+
+`MakeTex` erzeugte eine `Texture2D`, die ausschließlich vom `GUIStyle`
+referenziert wurde. `_stylesInited` ist nicht serialisiert, also entstand nach
+jedem Domain Reload und jedem An-/Abdocken eine neue Textur, während die alte
+verwaiste — die Quelle von Unitys „Cleaning up leaked objects". Neu:
+
+- `MakeTex` setzt `HideFlags.HideAndDontSave`,
+- das Feld `_activeRowTex` hält die Referenz,
+- `DisposeStyles()` zerstört sie und setzt `_stylesInited` zurück, sodass Stile
+  und Textur immer gemeinsam neu entstehen und kein Stil auf eine zerstörte
+  Textur zeigen kann,
+- Aufruf aus `OnDisable`.
+
+### Korrektur einer Review-Aussage zu `_expressQuietMode`
+
+Der ursprüngliche Review behauptete, ein früher Return in `ExpressSetupAsync`
+lasse das Flag auf `true` stehen. **Das ist falsch.** Jeder Standalone-Aufruf
+übergibt `skipConfirm: false` und setzt das Flag damit selbst zurück, und der
+Gate-Loop in `StartBatchWithSetupAsync` verwendet ausschließlich
+`continue`, erreicht sein abschließendes `_expressQuietMode = false` also immer.
+
+Ein echter Defekt liegt an derselben Stelle in der Gegenrichtung: das Flag ist
+ein einfaches Feld und überlebt keinen Domain Reload. Löst ein Express-Vorgang
+innerhalb des Upload-All-Gates einen Reload aus, setzt der fortgesetzte Upload
+in `ContinueExpressUploadAsync` den Bestätigungston pro Outfit ab — genau das,
+was der Quiet-Modus verhindern soll. Behoben über den neuen SessionState-Key
+`Shiro_Express_Quiet`, geschrieben zusammen mit dem übrigen Resume-Record,
+gelesen in `ContinueExpressUploadAsync` und in `ClearExpressState` entfernt.
+
+### Dabei aufgefallen, nicht behoben
+
+Der Gate-Loop in `OutfitBatchSetupGate.StartBatchWithSetupAsync` ist als Ganzes
+nicht domain-reload-fest. Anders als die Batch-Queue und der Express-Record
+liegt sein Fortschritt nur im laufenden Task. Löst ein Express-Vorgang mitten
+im Loop einen Reload aus, wird der einzelne Upload zwar korrekt fortgesetzt,
+die verbleibenden unkonfigurierten Outfits werden aber nie eingerichtet und die
+bereits konfigurierten nie gebatcht. Das ist ein eigener, größerer Schritt.
+
+### Prüfstand
+
+Wie oben: statisch geprüft (Delimiterbilanz aller elf Dateien identisch zu
+`HEAD`, neue Symbole genau einmal deklariert, kein `ShaderUtil`-Rest,
+`MakeTex`-Ergebnis wird nirgends mehr verworfen). **Weiterhin nicht in Unity
+kompiliert oder bedient.**

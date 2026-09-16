@@ -132,6 +132,7 @@ namespace ShiroTools
         private GUIStyle _headerStyle;
         private GUIStyle _activeRowStyle;
         private GUIStyle _inactiveRowStyle;
+        private Texture2D _activeRowTex;   // generated background — this window owns its lifetime
         private bool     _stylesInited;
 
         // ============================================================
@@ -179,6 +180,7 @@ namespace ShiroTools
             StopVramPump();
             StopScrollAnim();
             StopConsentWatcher();
+            DisposeStyles();
             // NOTE: _cts is deliberately left alone here. OnDisable also fires when the window
             // is docked/undocked or the domain reloads mid-batch — disposing or nulling it there
             // made the still-running batch loop throw (ObjectDisposedException /
@@ -607,7 +609,10 @@ namespace ShiroTools
             {
                 EditorGUILayout.LabelField("Outfits parent:", GUILayout.Width(82));
                 EditorGUI.BeginChangeCheck();
-                _outfitsParentName = EditorGUILayout.TextField(_outfitsParentName);
+                // Delayed: commits on Enter / focus loss. A live field rebuilt the entire outfit
+                // list on every keystroke, and half-typed names ("Outfi") match nothing — the
+                // list blanked out while you were still typing.
+                _outfitsParentName = EditorGUILayout.DelayedTextField(_outfitsParentName);
                 if (EditorGUI.EndChangeCheck())
                 {
                     EditorPrefs.SetString(PREFS_PARENT_NAME, _outfitsParentName);
@@ -623,7 +628,10 @@ namespace ShiroTools
                 {
                     EditorGUILayout.LabelField("Base Version:", GUILayout.Width(82));
                     EditorGUI.BeginChangeCheck();
-                    _avatarVersion = EditorGUILayout.TextField(_avatarVersion);
+                    // Delayed: SetVersion rewrites ShiroOutfit_versions.json atomically
+                    // (temp file + File.Replace + .bak). Per keystroke that is one full
+                    // rewrite per character typed.
+                    _avatarVersion = EditorGUILayout.DelayedTextField(_avatarVersion);
                     if (EditorGUI.EndChangeCheck())
                     {
                         AvatarVersionManager.SetVersion(mainId, _avatarVersion);
@@ -750,7 +758,10 @@ namespace ShiroTools
                     var oldBg = GUI.backgroundColor;
                     if (!idValid) GUI.backgroundColor = new Color(1f, 0.45f, 0.45f);
                     EditorGUI.BeginChangeCheck();
-                    entry.BlueprintId = EditorGUILayout.TextField(entry.BlueprintId ?? "", GUILayout.ExpandWidth(true));
+                    // Delayed: Save() serializes and rewrites the ENTIRE store (every avatar,
+                    // every outfit) atomically. A live field did that once per character, and
+                    // the format warning fired on every half-pasted ID.
+                    entry.BlueprintId = EditorGUILayout.DelayedTextField(entry.BlueprintId ?? "", GUILayout.ExpandWidth(true));
                     if (EditorGUI.EndChangeCheck())
                     {
                         entry.BlueprintId = (entry.BlueprintId ?? "").Trim();
@@ -1978,11 +1989,12 @@ namespace ShiroTools
                 alignment = TextAnchor.MiddleLeft
             };
 
+            _activeRowTex = MakeTex(2, 2, new Color(0.15f, 0.45f, 0.15f, 0.35f));
             _activeRowStyle = new GUIStyle(EditorStyles.helpBox)
             {
                 padding = new RectOffset(6, 6, 4, 4),
                 margin  = new RectOffset(0, 0, 0, 0),
-                normal  = { background = MakeTex(2, 2, new Color(0.15f, 0.45f, 0.15f, 0.35f)) }
+                normal  = { background = _activeRowTex }
             };
 
             _inactiveRowStyle = new GUIStyle(EditorStyles.helpBox)
@@ -1996,10 +2008,26 @@ namespace ShiroTools
         {
             var pix = new Color[w * h];
             for (int i = 0; i < pix.Length; i++) pix[i] = col;
-            var t = new Texture2D(w, h);
+            // HideAndDontSave keeps it out of the scene and asset save paths; DisposeStyles()
+            // owns it from here on.
+            var t = new Texture2D(w, h) { hideFlags = HideFlags.HideAndDontSave };
             t.SetPixels(pix);
             t.Apply();
             return t;
+        }
+
+        /// <summary>Releases the generated row background and forces the styles to be rebuilt on
+        /// the next OnGUI. Without this every domain reload and every dock/undock left another
+        /// orphaned Texture2D behind — the source of Unity's "Cleaning up leaked objects" notices.
+        /// Styles and texture are dropped together so a style can never point at a destroyed one.</summary>
+        private void DisposeStyles()
+        {
+            if (_activeRowTex != null) DestroyImmediate(_activeRowTex);
+            _activeRowTex     = null;
+            _activeRowStyle   = null;
+            _inactiveRowStyle = null;
+            _headerStyle      = null;
+            _stylesInited     = false;
         }
 
         // ============================================================

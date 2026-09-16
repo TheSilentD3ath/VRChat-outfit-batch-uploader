@@ -415,15 +415,13 @@ namespace ShiroTools
                 foreach (var mat in rend.sharedMaterials)
                 {
                     if (mat == null || mat.shader == null) continue;
-                    int count = ShaderUtil.GetPropertyCount(mat.shader);
-                    for (int i = 0; i < count; i++)
-                    {
-                        if (ShaderUtil.GetPropertyType(mat.shader, i) != ShaderUtil.ShaderPropertyType.TexEnv)
-                            continue;
-                        string prop = ShaderUtil.GetPropertyName(mat.shader, i);
+                    // Same texture set as iterating ShaderUtil's TexEnv properties, but without
+                    // walking every property of the shader — that is very slow on Poiyomi/lilToon
+                    // and is why ComputeVramFor already takes this path. The optimizer runs on the
+                    // VRAM button and inside Express, so it was the one still paying that cost.
+                    foreach (var prop in mat.GetTexturePropertyNames())
                         if (mat.GetTexture(prop) is Texture2D t2d)
                             yield return t2d;
-                    }
                 }
             }
         }

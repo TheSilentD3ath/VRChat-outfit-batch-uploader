@@ -217,7 +217,15 @@ daher:
   namensbasierten Caches und insbesondere die Express-/Advanced-Entwürfe
   verwirft,
 - eine korrigierte Abbruchsteuerung des Batches über `OnDestroy` statt
-  `OnDisable`.
+  `OnDisable`,
+- `DelayedTextField` für Blueprint-ID, Base Version, Outfits-Parent und
+  Items-Parent, sodass kein JSON-Write und kein Listen-Rebuild mehr pro
+  getipptem Zeichen läuft,
+- `Material.GetTexturePropertyNames()` statt der langsamen
+  `ShaderUtil`-Iteration im Texture-Optimizer,
+- `DisposeStyles()` gegen den Texture-Leak des Zeilenhintergrunds,
+- den SessionState-Key `Shiro_Express_Quiet`, damit der Quiet-Modus des
+  Upload-All-Gates einen Domain Reload überlebt.
 
 Einzelheiten, Verhaltensänderungen und offene Punkte stehen in
 `project-memory/handoffs/2026-09-16-sdkcompat-aktivierung-und-zustandsfixes.md`.

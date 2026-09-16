@@ -221,7 +221,10 @@ namespace ShiroTools
             {
                 EditorGUILayout.LabelField("Items parent", GUILayout.Width(110));
                 EditorGUI.BeginChangeCheck();
-                string newName = EditorGUILayout.TextField(_itemsParentName);
+                // Delayed, same reason as the outfits-parent field: a live field rebuilt the
+                // whole item list per keystroke, and half-typed names match nothing — the item
+                // sections vanished from every outfit while you were still typing.
+                string newName = EditorGUILayout.DelayedTextField(_itemsParentName);
                 if (EditorGUI.EndChangeCheck())
                 {
                     _itemsParentName = newName;
