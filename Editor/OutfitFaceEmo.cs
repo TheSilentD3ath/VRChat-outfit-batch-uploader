@@ -51,6 +51,9 @@ namespace ShiroTools
             return t != null ? t.gameObject : null;
         }
 
+        /// <summary>Drops the per-avatar FaceEmo UI state (keyed by outfit name).</summary>
+        private void ResetFaceEmoUiState() => _faceEmoExpanded.Clear();
+
         // ============================================================
         //  Apply (called from ActivateOutfit with the active outfit)
         // ============================================================

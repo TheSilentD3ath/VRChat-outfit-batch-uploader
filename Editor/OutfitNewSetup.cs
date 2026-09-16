@@ -340,6 +340,15 @@ namespace ShiroTools
                 DrawAdvancedPanel(entry);
         }
 
+        /// <summary>Drops the Express/Advanced drafts. They are keyed by outfit NAME and carry the
+        /// avatar name, description and content tags of the upload, so a draft left over from
+        /// another avatar would silently decide what a new avatar is published as.</summary>
+        private void ResetNewSetupUiState()
+        {
+            _nsDrafts.Clear();
+            _nsAdvancedOutfit = null;
+        }
+
         private void EnsureDraft(OutfitEntry entry)
         {
             if (_nsDrafts.ContainsKey(entry.Name)) return;

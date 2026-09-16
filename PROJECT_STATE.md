@@ -1,6 +1,6 @@
 # VRChat Outfit Batch Uploader – Projektstatus
 
-Letzte Aktualisierung: 23. August 2026
+Letzte Aktualisierung: 16. September 2026
 
 ## Baseline
 
@@ -195,3 +195,34 @@ v3.3.0 wurde am 23. August 2026 veröffentlicht:
 - Assetgröße und GitHub-Digest stimmen mit dem lokal geprüften Paket überein.
 - Das separate GitHub-Wiki wurde mit Commit `ca3659c` aktualisiert; sieben
   bestehende Seiten wurden gezielt angepasst und `User-Interface.md` ergänzt.
+
+## Stand nach v3.3.0 (unveröffentlicht)
+
+Nach dem Release v3.3.0 sind zwei weitere Arbeitsstände entstanden:
+
+- `7ef418d` korrigiert den veralteten `.gitignore`-Kommentar zur Ablage der
+  Einstellungen.
+- `54a0bb6` legt `CHANGELOG.md` an und fügt `Editor/SdkCompat.cs` hinzu.
+
+Ein Review am 16. September 2026 hat zwei Mängel dieses letzten Commits
+festgestellt und behoben: `SdkCompat` hatte keinen einzigen Aufrufer, und die
+`RELEASE_NOTES_v3.*`-Dateien waren samt `.meta` auf 0 Byte geleert statt
+gelöscht. Der aktuelle Arbeitsstand auf `claude/youthful-gates-udtpmv` enthält
+daher:
+
+- die tatsächliche Entfernung der acht 0-Byte-Dateien,
+- die Aktivierung aller vier `SdkCompat`-Pfade einschließlich einer
+  signatur- und überladungsfesten `FindMethod`,
+- `ResetPerAvatarUiStateIfAvatarChanged()`, das beim Avatarwechsel die
+  namensbasierten Caches und insbesondere die Express-/Advanced-Entwürfe
+  verwirft,
+- eine korrigierte Abbruchsteuerung des Batches über `OnDestroy` statt
+  `OnDisable`.
+
+Einzelheiten, Verhaltensänderungen und offene Punkte stehen in
+`project-memory/handoffs/2026-09-16-sdkcompat-aktivierung-und-zustandsfixes.md`.
+
+**Der Unity-Kompilier- und Regressionstest steht für diesen Stand noch aus.**
+In der Arbeitsumgebung war weder Unity noch ein C#-Compiler verfügbar; geprüft
+wurde ausschließlich statisch. Vor einer Veröffentlichung muss der Stand im
+freigegebenen Pluginordner auf `D:` kompiliert und bedient werden.

@@ -13,6 +13,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using UnityEditor;
@@ -29,12 +30,30 @@ namespace ShiroTools
             new Dictionary<string, MethodInfo>();
         private static readonly HashSet<string> _warned = new HashSet<string>();
 
-        private static MethodInfo FindMethod(Type type, string name, BindingFlags flags, string feature)
+        /// <summary>Resolves a method once and caches the result (hits and misses alike).
+        /// Pass <paramref name="signature"/> when the SDK/Unity type has overloads of this
+        /// name — a name-only lookup would otherwise throw AmbiguousMatchException.</summary>
+        private static MethodInfo FindMethod(Type type, string name, BindingFlags flags, string feature,
+                                             Type[] signature = null)
         {
-            string key = type.FullName + "::" + name;
+            string key = type.FullName + "::" + name +
+                         (signature == null ? "" : "(" + string.Join(",", signature.Select(t => t.Name)) + ")");
             if (_methods.TryGetValue(key, out var cached)) return cached;
 
-            var m = type.GetMethod(name, flags);
+            MethodInfo m;
+            try
+            {
+                m = signature != null
+                    ? type.GetMethod(name, flags, null, signature, null)
+                    : type.GetMethod(name, flags);
+            }
+            catch (AmbiguousMatchException)
+            {
+                // Overloads exist but the caller binds arguments by name/type anyway
+                // (BuildGetAvatarsArgs / UpdateAvatarImageAsync) — take the first by name.
+                m = type.GetMethods(flags).FirstOrDefault(x => x.Name == name);
+            }
+
             if (m == null && _warned.Add(key))
                 Debug.LogWarning($"[OutfitBatchUploader] {feature}: '{type.Name}.{name}' not found in this SDK/Unity version — feature disabled, manual flow still works.");
 
@@ -131,7 +150,8 @@ namespace ShiroTools
         {
             var audioUtil = typeof(AudioImporter).Assembly.GetType("UnityEditor.AudioUtil");
             var m = audioUtil == null ? null : FindMethod(audioUtil, "PlayPreviewClip",
-                BindingFlags.Static | BindingFlags.Public, "Confirm sound");
+                BindingFlags.Static | BindingFlags.Public, "Confirm sound",
+                new[] { typeof(AudioClip), typeof(int), typeof(bool) });
             if (m == null) return false;
             try
             {
