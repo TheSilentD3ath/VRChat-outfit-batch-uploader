@@ -116,8 +116,7 @@ tatsächlich entfernt. `CHANGELOG.md` bleibt die konsolidierte Quelle.
   gehört in einen eigenen Schritt.
 - Nicht angefasst und weiterhin offen: Doppelmodell `OutfitEntry`/`OutfitData`,
   namensbasierte Identität, `FlushScene()` speichert ungefragt, fehlende
-  Tests/CI, fehlendes `.asmdef`, unterschiedlicher Umfang von VRAM-Anzeige und
-  VRAM-Optimierung.
+  Tests/CI, fehlendes `.asmdef`.
 
 ---
 
@@ -256,3 +255,79 @@ der Split-Dateien in Summe unverändert, neue `.meta` strukturgleich zu den
 bestehenden und GUID projektweit eindeutig. **Weiterhin nicht in Unity
 kompiliert.** Der Nutzer führt Kompilierung und Bedienung zu Hause durch und
 stellt das Ergebnis anschließend bereit.
+
+---
+
+## Nachtrag 3: VRAM-Umfang von Anzeige und Optimierung
+
+### Das Problem
+
+Die Budgetzeile misst über `CollectUploadRenderers`, also Shared Body plus
+Outfit plus ausgewählte Items. Der Optimizer sammelte über
+`CollectOutfitTextures(entry.Go)`, also nur das Outfit und optional die Items.
+Der Body ist in der Regel der größte Einzelposten. Wer „Very Poor" sah, auf
+VRAM klickte und optimierte, sah die Zahl daher kaum sinken, ohne dass die
+Oberfläche erklärte, warum.
+
+Nach Rücksprache umgesetzt: Opt-in-Schalter plus Aufschlüsselung. Ein
+stillschweigendes Ausweiten des Optimizers auf den Body wurde verworfen, weil
+Body-Texturen zu allen Outfits gehören und die Änderung nicht rückgängig
+gemacht werden kann.
+
+### Eine Klassifizierungsregel für alles
+
+Neu ist `CollectUploadRenderersByBucket(entry, body, outfit, items)`. Es
+enthält die bisherige Regel aus `CollectUploadRenderers` unverändert, sortiert
+die Renderer aber zusätzlich in drei Eimer. „Shared Body" ist alles unterhalb
+des Avatars, das weder im Outfits- noch im Items-Parent liegt.
+`CollectUploadRenderers` bleibt als Verkettung erhalten, damit der
+Quest-Shader-Check im Dry Run unverändert funktioniert.
+
+`CollectTextures(IEnumerable<Renderer>)` ist der gemeinsame Textur-Enumerator;
+`CollectOutfitTextures(GameObject)` ist nur noch ein Aufruf davon. Damit
+verschwindet die zweite, abweichende Textursammlung, die vorher in
+`ComputeVramFor` inline lag.
+
+### Aufschlüsselung
+
+`_vramCache` speichert statt `long` jetzt `VramSplit` mit `Body`, `Outfit`,
+`Items` und `Total`. Die Reihenfolge der Auswertung **ist** die
+Zuordnungsregel: eine Textur, die mehrere Eimer nutzen, wird einmal gezählt,
+und zwar im ersten erreichenden — Body vor Outfit vor Items. Dadurch ergeben
+die drei Zahlen immer exakt die Gesamtsumme, und eine gemeinsam genutzte Textur
+erscheint im breitesten Bereich, der angefasst werden müsste.
+
+Die Budgetzeile zeigt bei vorhandenem Body-Anteil `· body <n>` hinter dem Rang;
+der Tooltip nennt alle drei Zahlen und die Zuordnungsregel.
+
+### Opt-in-Schalter
+
+`ShiroNewOutfit_OptBody`, Standard aus, direkt unter der bestehenden
+Item-Option. `BuildOptimizationPlan` liefert zusätzlich `out bool bodyIncluded`.
+Beide Dialoge nutzen den gemeinsamen `ScopeNote`, der bei Body-Beteiligung
+ausdrücklich schreibt, dass alle Outfits betroffen sind.
+
+Zusätzliche Sicherung in `MaybeOptimizeDuringExpress`: die Bedingung lautet
+`if (_nsOptAsk || bodyInc)`. Ein Plan mit Body-Texturen wird also auch dann
+bestätigt, wenn der Nutzer früher „Always (don't ask again)" gewählt hat. Das
+folgt der Projektregel, dass destruktive Texturänderungen an gemeinsam
+genutzten Texturen explizit bestätigt und benannt werden müssen.
+
+### Bewusste Ungenauigkeit, korrekt benannt
+
+Eine Textur, die Body und Outfit gemeinsam nutzen, erreicht der Optimizer
+bereits ohne den neuen Schalter — über den Renderer des Outfits. In der Anzeige
+liegt sie aber im Body-Eimer. Der Body-Wert kann also sinken, ohne dass die
+Option an ist. Tooltip und Kommentar sagen das jetzt so: der VRAM-Knopf deckt
+Outfit und Items ab einschließlich geteilter Texturen, und nur Texturen, die
+**ausschließlich** der Body nutzt, brauchen den Schalter.
+
+### Prüfstand
+
+Statisch: Delimiterbilanz unverändert, alte Signaturen
+(`BuildOptimizationPlan(entry, out int)`, `BuildOptimizationPlan(List<GameObject>)`,
+`TryGetVramFor(entry, out long)`) restlos ersetzt, neue genau einmal deklariert,
+`CollectUploadRenderers` im Dry Run weiterhin vorhanden. **Nicht in Unity
+kompiliert.** Beim Test besonders zu prüfen: stimmen Body/Outfit/Items in Summe
+mit der vorher angezeigten Gesamtzahl überein, und greift der erzwungene Dialog
+bei aktiviertem Body-Schalter trotz „don't ask again".

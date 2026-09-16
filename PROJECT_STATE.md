@@ -230,7 +230,11 @@ daher:
 - `Editor/AvatarVersionManager.cs` als eigene Datei (vorher am Ende von
   `OutfitBatchUploader.cs`, das dadurch von 2182 auf 2062 Zeilen schrumpft),
 - eine nachgeführte `ARCHITECTURE_MAP.md`, die `SdkCompat.cs` bisher nicht
-  kannte.
+  kannte,
+- den angeglichenen VRAM-Umfang: Budgetzeile und Dialog schlüsseln Body,
+  Outfit und Items auf, und der neue Schalter `ShiroNewOutfit_OptBody`
+  (Standard aus) nimmt Body-Texturen optional in die Optimierung auf. Ein Plan
+  mit Body-Texturen wird immer bestätigt, auch bei „don't ask again".
 
 Einzelheiten, Verhaltensänderungen und offene Punkte stehen in
 `project-memory/handoffs/2026-09-16-sdkcompat-aktivierung-und-zustandsfixes.md`.

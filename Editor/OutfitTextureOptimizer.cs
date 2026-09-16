@@ -30,6 +30,7 @@ namespace ShiroTools
         private const string NS_OPT_MAXRES  = "ShiroNewOutfit_OptMaxRes";
         private const string NS_OPT_MINRES  = "ShiroNewOutfit_OptMinRes";
         private const string NS_OPT_ITEMS   = "ShiroNewOutfit_OptItems";
+        private const string NS_OPT_BODY    = "ShiroNewOutfit_OptBody";
 
         // ---- Runtime defaults ----
         private bool _optLoaded;
@@ -38,6 +39,7 @@ namespace ShiroTools
         private int  _nsOptMaxRes = 2048;
         private int  _nsOptMinRes = 0;  // never reduce a texture below this (0 = no floor)
         private bool _nsOptItems;        // also optimize the outfit's INCLUDED items (accessories), opt-in
+        private bool _nsOptBody;         // also optimize the SHARED body textures, opt-in (affects every outfit)
 
         private void EnsureOptDefaults()
         {
@@ -48,6 +50,7 @@ namespace ShiroTools
             _nsOptMaxRes  = EditorPrefs.GetInt(NS_OPT_MAXRES, 2048);
             _nsOptMinRes  = EditorPrefs.GetInt(NS_OPT_MINRES, 0);
             _nsOptItems   = EditorPrefs.GetBool(NS_OPT_ITEMS, false);
+            _nsOptBody    = EditorPrefs.GetBool(NS_OPT_BODY, false);
         }
 
         private void SaveOptDefaults()
@@ -57,6 +60,7 @@ namespace ShiroTools
             EditorPrefs.SetInt(NS_OPT_MAXRES, Mathf.Clamp(_nsOptMaxRes, 32, 8192));
             EditorPrefs.SetInt(NS_OPT_MINRES, Mathf.Clamp(_nsOptMinRes, 0, 8192));
             EditorPrefs.SetBool(NS_OPT_ITEMS, _nsOptItems);
+            EditorPrefs.SetBool(NS_OPT_BODY, _nsOptBody);
         }
 
         // ============================================================
@@ -96,6 +100,12 @@ namespace ShiroTools
 
             _nsOptItems = EditorGUILayout.ToggleLeft(
                 "Also optimize the outfit's selected items (accessories)", _nsOptItems);
+            _nsOptBody = EditorGUILayout.ToggleLeft(
+                new GUIContent("Also optimize shared body textures",
+                    "The body / base mesh is usually the largest share of the VRAM estimate, but its " +
+                    "textures are used by EVERY outfit — optimizing them from one outfit changes all " +
+                    "of them. Off by default, and a plan that includes the body is always confirmed."),
+                _nsOptBody);
 
             if (EditorGUI.EndChangeCheck())
                 SaveOptDefaults();
@@ -116,7 +126,7 @@ namespace ShiroTools
             EnsureOptDefaults();
             if (entry?.Go == null) return;
 
-            var plan = BuildOptimizationPlan(entry, out int itemsInc);
+            var plan = BuildOptimizationPlan(entry, out int itemsInc, out bool bodyInc);
             if (plan.Count == 0)
             {
                 SetStatus($"'{entry.Name}': textures already optimal — nothing to do.", MessageType.Info);
@@ -129,7 +139,7 @@ namespace ShiroTools
             bool ok = EditorUtility.DisplayDialog(
                 "Optimize textures (VRAM)",
                 BuildPlanSummary(entry.Name, plan, saved) +
-                (itemsInc > 0 ? $"\n• Includes the textures of {itemsInc} selected item(s)" : "") +
+                ScopeNote(itemsInc, bodyInc) +
                 "\n\nThis changes the textures' import settings and is NOT undo-able. Continue?",
                 "Optimize", "Cancel");
             if (!ok) { SetStatus("Texture optimization cancelled.", MessageType.Warning); return; }
@@ -145,18 +155,21 @@ namespace ShiroTools
             EnsureOptDefaults();
             if (!_nsOptEnabled || entry?.Go == null) return;
 
-            var plan = BuildOptimizationPlan(entry, out int itemsInc);
+            var plan = BuildOptimizationPlan(entry, out int itemsInc, out bool bodyInc);
             if (plan.Count == 0) return;
 
             long saved = plan.Sum(p => p.SavedBytes);
             LogPlan(entry.Name, plan, saved);
 
-            if (_nsOptAsk)
+            // A plan reaching the shared body is confirmed even when "don't ask again" is set:
+            // it changes textures belonging to every outfit, which the project rules require to
+            // be explicitly confirmed and spelled out every time.
+            if (_nsOptAsk || bodyInc)
             {
                 int choice = EditorUtility.DisplayDialogComplex(
                     "Optimize textures (VRAM)",
                     BuildPlanSummary(entry.Name, plan, saved) +
-                    (itemsInc > 0 ? $"\n• Includes the textures of {itemsInc} selected item(s)" : "") +
+                    ScopeNote(itemsInc, bodyInc) +
                     "\n\nThis changes texture import settings and is NOT undo-able.",
                     "Optimize now", "Skip", "Always (don't ask again)");
 
@@ -184,11 +197,14 @@ namespace ShiroTools
             public long SavedBytes;
         }
 
-        /// <summary>Plan for an outfit: its own textures plus — if enabled in the defaults —
-        /// the textures of every item (accessory) currently selected for this outfit.</summary>
-        private List<TexOpt> BuildOptimizationPlan(OutfitEntry entry, out int itemsIncluded)
+        /// <summary>Plan for an outfit: its own textures, plus — each only if enabled in the
+        /// defaults — the textures of its selected items and of the shared body. The body is the
+        /// usual reason the VRAM counter barely moves after optimizing, because it is normally the
+        /// largest share; it stays opt-in because its textures belong to EVERY outfit.</summary>
+        private List<TexOpt> BuildOptimizationPlan(OutfitEntry entry, out int itemsIncluded, out bool bodyIncluded)
         {
             itemsIncluded = 0;
+            bodyIncluded  = false;
             var roots = new List<GameObject> { entry.Go };
 
             if (_nsOptItems)
@@ -203,16 +219,28 @@ namespace ShiroTools
                         }
             }
 
-            return BuildOptimizationPlan(roots);
+            IEnumerable<Texture2D> textures = roots.SelectMany(CollectOutfitTextures);
+
+            if (_nsOptBody)
+            {
+                var body = new List<Renderer>(); var outfit = new List<Renderer>(); var items = new List<Renderer>();
+                CollectUploadRenderersByBucket(entry, body, outfit, items);
+                if (body.Count > 0)
+                {
+                    bodyIncluded = true;
+                    textures = textures.Concat(CollectTextures(body));
+                }
+            }
+
+            return BuildOptimizationPlan(textures);
         }
 
-        private List<TexOpt> BuildOptimizationPlan(List<GameObject> roots)
+        private List<TexOpt> BuildOptimizationPlan(IEnumerable<Texture2D> textures)
         {
             var result = new List<TexOpt>();
             var seen = new HashSet<Texture2D>();
 
-            foreach (var root in roots)
-            foreach (var tex in CollectOutfitTextures(root))
+            foreach (var tex in textures)
             {
                 if (tex == null || !seen.Add(tex)) continue;
 
@@ -305,7 +333,19 @@ namespace ShiroTools
         //  enumerated via GetTexturePropertyNames (ShaderUtil property
         //  iteration is very slow on big shaders like Poiyomi/lilToon).
         // ============================================================
-        private readonly Dictionary<string, long> _vramCache = new Dictionary<string, long>();
+        /// <summary>Per-bucket VRAM of one outfit. A texture referenced by more than one bucket is
+        /// counted ONCE, in the first bucket that reaches it — body before outfit before items. So
+        /// the three numbers always add up to Total, and a shared texture is attributed to the
+        /// broadest scope that would have to be touched to save it.</summary>
+        internal struct VramSplit
+        {
+            public long Body;
+            public long Outfit;
+            public long Items;
+            public long Total => Body + Outfit + Items;
+        }
+
+        private readonly Dictionary<string, VramSplit> _vramCache = new Dictionary<string, VramSplit>();
         private bool _vramPumpActive;
         private double _nextVramTick;
 
@@ -317,14 +357,14 @@ namespace ShiroTools
             EditorApplication.update -= VramPumpTick;
         }
 
-        /// <summary>Estimated texture VRAM of everything that uploads WITH this outfit
-        /// (shared body + the outfit + its included items). Returns false while the
-        /// value is still being computed in the background.</summary>
-        private bool TryGetVramFor(OutfitEntry entry, out long bytes)
+        /// <summary>Estimated texture VRAM of everything that uploads WITH this outfit, split into
+        /// shared body / outfit / items. Returns false while the value is still being computed in
+        /// the background.</summary>
+        private bool TryGetVramFor(OutfitEntry entry, out VramSplit split)
         {
-            bytes = 0;
+            split = default;
             if (entry?.Go == null) return true;
-            if (_vramCache.TryGetValue(entry.Name, out bytes)) return true;
+            if (_vramCache.TryGetValue(entry.Name, out split)) return true;
             EnsureVramPump();
             return false;
         }
@@ -357,7 +397,7 @@ namespace ShiroTools
             try { ComputeVramFor(missing); }
             catch (Exception ex)
             {
-                _vramCache[missing.Name] = 0;   // never let the pump die
+                _vramCache[missing.Name] = default;   // never let the pump die
                 Debug.LogWarning($"[OutfitBatchUploader] VRAM estimate failed for '{missing.Name}': {ex.Message}");
             }
             Repaint();
@@ -365,26 +405,35 @@ namespace ShiroTools
 
         private void ComputeVramFor(OutfitEntry entry)
         {
-            long total = 0;
+            var body = new List<Renderer>(); var outfit = new List<Renderer>(); var items = new List<Renderer>();
+            CollectUploadRenderersByBucket(entry, body, outfit, items);
+
             var seen = new HashSet<Texture2D>();
-            foreach (var rend in CollectUploadRenderers(entry))
+            long Measure(List<Renderer> renderers)
             {
-                foreach (var mat in rend.sharedMaterials)
-                {
-                    if (mat == null || mat.shader == null) continue;
-                    foreach (var propName in mat.GetTexturePropertyNames())
-                        if (mat.GetTexture(propName) is Texture2D t2d && seen.Add(t2d))
-                            total += TexBytes(t2d, BppOf(t2d.format), 1f);
-                }
+                long n = 0;
+                foreach (var t2d in CollectTextures(renderers))
+                    if (t2d != null && seen.Add(t2d)) n += TexBytes(t2d, BppOf(t2d.format), 1f);
+                return n;
             }
-            _vramCache[entry.Name] = total;
+
+            // Evaluation order IS the attribution rule for shared textures — see VramSplit.
+            var split = new VramSplit();
+            split.Body   = Measure(body);
+            split.Outfit = Measure(outfit);
+            split.Items  = Measure(items);
+            _vramCache[entry.Name] = split;
         }
 
-        /// <summary>All renderers that upload with this outfit: shared body (not EditorOnly),
-        /// the outfit itself, and its included items — other outfits and excluded items skipped.</summary>
-        private IEnumerable<Renderer> CollectUploadRenderers(OutfitEntry entry)
+        /// <summary>Splits everything that uploads with this outfit into its three buckets in one
+        /// pass, so the VRAM counter, the optimization plan and the dry run can never classify a
+        /// renderer differently. "Shared body" is everything under the avatar that sits in neither
+        /// the Outfits nor the Items parent — the base mesh, hair, and anything else every outfit
+        /// carries. Other outfits and excluded items are dropped entirely.</summary>
+        private void CollectUploadRenderersByBucket(OutfitEntry entry,
+            List<Renderer> body, List<Renderer> outfit, List<Renderer> items)
         {
-            if (_avatarRoot == null || entry?.Go == null) yield break;
+            if (_avatarRoot == null || entry?.Go == null) return;
             EnsureItemsBuilt();
 
             Transform outfitsT = _outfitsParent != null ? _outfitsParent.transform : null;
@@ -401,30 +450,45 @@ namespace ShiroTools
                 if (ownerItem != null && !ItemIncludedFor(entry.Name, ownerItem.name)) continue;    // excluded item
                 if (ownerOutfit == null && ownerItem == null && IsUnderEditorOnly(tr)) continue;    // stripped shared subtree
 
-                yield return r;
+                if (ownerOutfit != null)    outfit.Add(r);
+                else if (ownerItem != null) items.Add(r);
+                else                        body.Add(r);
             }
+        }
+
+        /// <summary>All renderers that upload with this outfit, body first — see
+        /// CollectUploadRenderersByBucket for the classification.</summary>
+        private IEnumerable<Renderer> CollectUploadRenderers(OutfitEntry entry)
+        {
+            var body = new List<Renderer>(); var outfit = new List<Renderer>(); var items = new List<Renderer>();
+            CollectUploadRenderersByBucket(entry, body, outfit, items);
+            return body.Concat(outfit).Concat(items);
         }
 
         // ============================================================
         //  Texture collection
         // ============================================================
-        private static IEnumerable<Texture2D> CollectOutfitTextures(GameObject outfitGo)
+        /// <summary>Every texture referenced by these renderers, with duplicates left in —
+        /// callers dedupe, because which bucket a shared texture lands in is their decision.
+        /// Uses Material.GetTexturePropertyNames rather than walking ShaderUtil's property list,
+        /// which is very slow on large shaders (Poiyomi/lilToon).</summary>
+        private static IEnumerable<Texture2D> CollectTextures(IEnumerable<Renderer> renderers)
         {
-            foreach (var rend in outfitGo.GetComponentsInChildren<Renderer>(true))
+            foreach (var rend in renderers)
             {
+                if (rend == null) continue;
                 foreach (var mat in rend.sharedMaterials)
                 {
                     if (mat == null || mat.shader == null) continue;
-                    // Same texture set as iterating ShaderUtil's TexEnv properties, but without
-                    // walking every property of the shader — that is very slow on Poiyomi/lilToon
-                    // and is why ComputeVramFor already takes this path. The optimizer runs on the
-                    // VRAM button and inside Express, so it was the one still paying that cost.
                     foreach (var prop in mat.GetTexturePropertyNames())
                         if (mat.GetTexture(prop) is Texture2D t2d)
                             yield return t2d;
                 }
             }
         }
+
+        private static IEnumerable<Texture2D> CollectOutfitTextures(GameObject outfitGo) =>
+            CollectTextures(outfitGo.GetComponentsInChildren<Renderer>(true));
 
         // ============================================================
         //  Size math (ported from Thry's TextureVRAM, MIT)
@@ -489,6 +553,19 @@ namespace ShiroTools
         //  Reporting helpers
         // ============================================================
         private static string Mib(long bytes) => (bytes / 1048576f).ToString("0.0") + " MiB";
+
+        /// <summary>The extra scopes a plan covers. The body line is deliberately blunt: per the
+        /// project rules a destructive texture change that reaches shared textures has to say so.</summary>
+        private static string ScopeNote(int itemsIncluded, bool bodyIncluded)
+        {
+            string note = "";
+            if (itemsIncluded > 0)
+                note += $"\n• Includes the textures of {itemsIncluded} selected item(s)";
+            if (bodyIncluded)
+                note += "\n• Includes the SHARED BODY textures — they are used by EVERY outfit, " +
+                        "so this changes all of them, not just this one";
+            return note;
+        }
 
         private static string BuildPlanSummary(string outfitName, List<TexOpt> plan, long saved)
         {
