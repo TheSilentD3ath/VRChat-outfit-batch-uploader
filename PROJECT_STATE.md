@@ -225,7 +225,12 @@ daher:
   `ShaderUtil`-Iteration im Texture-Optimizer,
 - `DisposeStyles()` gegen den Texture-Leak des Zeilenhintergrunds,
 - den SessionState-Key `Shiro_Express_Quiet`, damit der Quiet-Modus des
-  Upload-All-Gates einen Domain Reload überlebt.
+  Upload-All-Gates einen Domain Reload überlebt,
+- einen Dry-Run-Check auf doppelte Avatarnamen in der Szene,
+- `Editor/AvatarVersionManager.cs` als eigene Datei (vorher am Ende von
+  `OutfitBatchUploader.cs`, das dadurch von 2182 auf 2062 Zeilen schrumpft),
+- eine nachgeführte `ARCHITECTURE_MAP.md`, die `SdkCompat.cs` bisher nicht
+  kannte.
 
 Einzelheiten, Verhaltensänderungen und offene Punkte stehen in
 `project-memory/handoffs/2026-09-16-sdkcompat-aktivierung-und-zustandsfixes.md`.

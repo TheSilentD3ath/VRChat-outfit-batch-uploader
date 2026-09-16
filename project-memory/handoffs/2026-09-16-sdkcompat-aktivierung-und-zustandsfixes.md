@@ -114,11 +114,10 @@ tatsächlich entfernt. `CHANGELOG.md` bleibt die konsolidierte Quelle.
   läuft. Die daraus folgende `ObjectDisposedException` wird von
   `HandleBatchError` gefangen. Eine saubere Lösung bräuchte eine Lauf-ID; das
   gehört in einen eigenen Schritt.
-- Nicht angefasst und weiterhin offen: Dateigröße von `OutfitBatchUploader.cs`,
-  Doppelmodell `OutfitEntry`/`OutfitData`, namensbasierte Identität,
-  `FlushScene()` speichert ungefragt, fehlende Tests/CI, fehlendes `.asmdef`,
-  unterschiedlicher Umfang von VRAM-Anzeige und VRAM-Optimierung, fehlender
-  Dry-Run-Check auf doppelte Avatarnamen.
+- Nicht angefasst und weiterhin offen: Doppelmodell `OutfitEntry`/`OutfitData`,
+  namensbasierte Identität, `FlushScene()` speichert ungefragt, fehlende
+  Tests/CI, fehlendes `.asmdef`, unterschiedlicher Umfang von VRAM-Anzeige und
+  VRAM-Optimierung.
 
 ---
 
@@ -202,3 +201,58 @@ Wie oben: statisch geprüft (Delimiterbilanz aller elf Dateien identisch zu
 `HEAD`, neue Symbole genau einmal deklariert, kein `ShaderUtil`-Rest,
 `MakeTex`-Ergebnis wird nirgends mehr verworfen). **Weiterhin nicht in Unity
 kompiliert oder bedient.**
+
+---
+
+## Nachtrag 2: Dry-Run-Check und Dateiaufteilung
+
+### Dry Run erkennt doppelte Avatarnamen
+
+Der Dry Run prüfte bisher doppelte Outfitnamen, aber nicht doppelte
+Avatarnamen. Der Projektstore ist über den Avatarnamen verschlüsselt, zwei
+gleichnamige Avatare in der Szene teilen sich also **einen** Datensatz samt
+Blueprint-IDs, Blendshapes, Items und FaceEmo. Die Quick-Pick-Leiste im
+Kopfbereich macht genau diesen Fall leicht erreichbar.
+
+Neu in `OutfitDryRun.cs` direkt nach der Outfitnamen-Prüfung. Die Meldung ist
+ein Fehler, sobald der aktuell gewählte Avatar zu den Doppelungen gehört, sonst
+eine Warnung — ohne Auswahl ist es noch keine akute Gefahr.
+
+Das ist bewusst nur ein Wächter, keine Lösung. Die eigentliche Ursache bleibt
+die namensbasierte Identität, die weiterhin offen ist.
+
+### `AvatarVersionManager` in eigene Datei
+
+Die Klasse lag am Ende von `OutfitBatchUploader.cs` und war damit weder Teil
+der `partial class` noch bei den übrigen Stores. Sie ist jetzt
+`Editor/AvatarVersionManager.cs`. Der Klassenrumpf wurde zeichengenau
+übernommen und gegen die HEAD-Fassung verglichen; nur Dateikopf und `using`
+sind neu, `using UnityEditor` entfiel als unbenutzt. Eine passende `.meta` mit
+neuer GUID wurde im Format der bestehenden MonoImporter-Dateien angelegt;
+bestehende GUIDs bleiben unberührt.
+
+`OutfitBatchUploader.cs` schrumpft dadurch von 2182 auf 2062 Zeilen. Das ist
+ein erster Schritt gegen die Dateigröße, nicht die Lösung: Scroll- und
+Motion-Blur-Engine, `OutfitEntry` und die übrige UI liegen weiter dort.
+
+### Architekturkarte nachgeführt
+
+`project-memory/ARCHITECTURE_MAP.md` kannte `SdkCompat.cs` nicht — die Datei kam
+mit `54a0bb6`, ohne dass die Karte ergänzt wurde. Eingetragen sind jetzt
+`SdkCompat.cs` und `AvatarVersionManager.cs`; die Beschreibung von
+`OutfitApiTools.cs` nennt nicht mehr Reflection als ihre Aufgabe, da die dort
+verbliebenen Aufrufe jetzt über `SdkCompat` laufen.
+
+Unter „Externe Grenzen" steht neu, dass neue Reflection nach `SdkCompat.cs`
+gehört, mit den zwei bewusst dort belassenen Ausnahmen: die reine Typerkennung
+in `OutfitContacts.cs` (Namensvergleich ohne Methodenaufruf) und die
+UI-Automatisierung der SDK-Panels in `OutfitNewSetup.cs` (Auto-Fixes und
+Copyright-Modal, die an SDK-UI-Elementen statt an API-Methoden hängen).
+
+### Prüfstand
+
+Statisch: verschobener Klassenrumpf zeichengleich zu `HEAD`, Delimiterbilanz
+der Split-Dateien in Summe unverändert, neue `.meta` strukturgleich zu den
+bestehenden und GUID projektweit eindeutig. **Weiterhin nicht in Unity
+kompiliert.** Der Nutzer führt Kompilierung und Bedienung zu Hause durch und
+stellt das Ergebnis anschließend bereit.

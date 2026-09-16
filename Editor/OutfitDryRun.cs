@@ -89,6 +89,24 @@ namespace ShiroTools
             foreach (var n in dupNames)
                 Err($"Two or more outfits are named \"{n}\" — their saved settings collide. Rename one.");
 
+            // Duplicate AVATAR names → the project store is keyed by avatar name, so two
+            // identically named avatars in the scene share ONE record. The outfit-name check
+            // above catches collisions within an avatar; this catches them across avatars,
+            // which is the case the Quick-pick row makes easy to walk into.
+            var dupAvatars = _avatarsInScene.Where(a => a != null)
+                                            .GroupBy(a => a.name)
+                                            .Where(g => g.Count() > 1)
+                                            .Select(g => g.Key).ToList();
+            foreach (var n in dupAvatars)
+            {
+                string msg = $"{_avatarsInScene.Count(a => a != null && a.name == n)} avatars in the scene are named " +
+                             $"\"{n}\" — settings are stored per avatar NAME, so they share one record " +
+                             "(Blueprint IDs, blendshapes, items, FaceEmo) and overwrite each other. Rename one.";
+                // Only a live danger once one of them is actually selected.
+                if (_avatarRoot != null && _avatarRoot.name == n) Err(msg);
+                else Warn(msg);
+            }
+
             // Duplicate blueprint IDs across outfits → probably a paste error
             var dupIds = _outfits.Where(o => !string.IsNullOrWhiteSpace(o.BlueprintId))
                                  .GroupBy(o => o.BlueprintId).Where(g => g.Count() > 1).ToList();
