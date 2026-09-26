@@ -19,7 +19,13 @@ using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 using VRC.Core;
+using VRC.SDK3A.Editor;
+using VRC.SDK3.Avatars.Components;
+using VRC.SDKBase;
+using VRC.SDKBase.Editor;
 using VRC.SDKBase.Editor.Api;   // VRCApi, VRCAvatar
+// Same VRC import set OutfitBatchUploader.cs compiled VRCCopyrightAgreement with
+// before the move here — with only VRC.Core + VRC.SDKBase.Editor.Api it fails (CS0246).
 
 namespace ShiroTools
 {

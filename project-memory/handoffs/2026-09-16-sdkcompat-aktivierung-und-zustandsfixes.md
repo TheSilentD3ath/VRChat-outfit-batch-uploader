@@ -331,3 +331,38 @@ Statisch: Delimiterbilanz unverändert, alte Signaturen
 kompiliert.** Beim Test besonders zu prüfen: stimmen Body/Outfit/Items in Summe
 mit der vorher angezeigten Gesamtzahl überein, und greift der erzwungene Dialog
 bei aktiviertem Body-Schalter trotz „don't ask again".
+
+## Nachtrag 4 — erster Unity-Test (26.09.2026)
+
+Testpaket `VRChat-outfit-batch-uploader-3.3.0-dev-2e74c29.unitypackage`
+(32 Assets, Layout und GUIDs wie v3.3.0) im Testprojekt importiert.
+
+**Ergebnis aus `Editor.log`:**
+
+- Erster Importdurchlauf: CS0103 für `SdkCompat`/`AvatarVersionManager` —
+  normal, die neuen Dateien waren im ersten Pass noch unbekannt
+  („Tundra requires additional run").
+- Zweiter Durchlauf: **`Tundra build failed`**, einziger Fehler
+  `SdkCompat.cs(69,39): error CS0246: 'VRCCopyrightAgreement' could not be
+  found`. `SdkCompat.cs` (seit `54a0bb6` im Repo) war vorher nie in Unity
+  kompiliert worden; ihm fehlten die VRC-`using`s, mit denen derselbe
+  `typeof(VRCCopyrightAgreement)` in `OutfitBatchUploader.cs` kompiliert hatte.
+- Danach **kein** Domain Reload mehr; die späteren „Tundra build success"-
+  Zeilen sind `PlayerScriptAssemblies` der Avatar-Builds. Der 34-Outfit-Batch
+  (33/34 OK, 00:36–02:05, Ø 2:36 min) lief also auf dem vorher geladenen
+  alten Code und ist **kein** Test dieses Stands.
+- Einziger Fehlschlag `LD_BLK_MA (Breast Big)`: „Avatar validation failed",
+  identisch seit 24.07.2026 — vorbestehend, keine Regression.
+
+**Fix:** `SdkCompat.cs` erhält die komplette VRC-Importmenge des alten
+`OutfitBatchUploader.cs` (`VRC.Core`, `VRC.SDK3A.Editor`,
+`VRC.SDK3.Avatars.Components`, `VRC.SDKBase`, `VRC.SDKBase.Editor`,
+`VRC.SDKBase.Editor.Api`). Die Datei nutzt genau die drei SDK-Typen
+(`VRCApi`, `VRCAvatar`, `VRCCopyrightAgreement`), die dort mit dieser Menge
+gemeinsam kompilierten — Namenskonflikte sind damit ausgeschlossen. Der
+Namespace von `VRCCopyrightAgreement` ließ sich ohne SDK nicht exakt
+bestimmen, daher die bewährte Menge statt eines einzelnen `using`.
+
+Da Roslyn im zweiten Pass alle Bindungsfehler der Assembly meldet und nur
+dieser eine auftrat, sind die übrigen neuen Dateien (u. a.
+`AvatarVersionManager.cs`) kompiliert. **Nachtest offen.**

@@ -239,7 +239,13 @@ daher:
 Einzelheiten, Verhaltensänderungen und offene Punkte stehen in
 `project-memory/handoffs/2026-09-16-sdkcompat-aktivierung-und-zustandsfixes.md`.
 
-**Der Unity-Kompilier- und Regressionstest steht für diesen Stand noch aus.**
-In der Arbeitsumgebung war weder Unity noch ein C#-Compiler verfügbar; geprüft
-wurde ausschließlich statisch. Vor einer Veröffentlichung muss der Stand im
-freigegebenen Pluginordner auf `D:` kompiliert und bedient werden.
+**Erster Unity-Test (26.09.2026) ist fehlgeschlagen, Fix liegt vor, Nachtest
+offen.** Das Testpaket von `2e74c29` kompilierte nicht: `SdkCompat.cs(69,39)`
+CS0246, `VRCCopyrightAgreement` nicht gefunden — der Datei fehlten die
+VRC-`using`s, mit denen der Code vorher in `OutfitBatchUploader.cs` kompiliert
+hatte. `SdkCompat.cs` war vor diesem Paket nie in Unity kompiliert worden. Weil
+der Compile fehlschlug, lief der anschließende 34-Outfit-Batch (33/34 OK) noch
+auf dem **alten** geladenen Code und belegt nichts über diesen Stand. Der Fix
+übernimmt die vorher bewährte VRC-Importmenge. Vor einer Veröffentlichung muss
+der korrigierte Stand erneut im freigegebenen Pluginordner auf `D:`
+kompiliert und der Batch wiederholt werden.
