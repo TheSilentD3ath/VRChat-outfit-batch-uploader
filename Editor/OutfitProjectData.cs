@@ -316,6 +316,15 @@ namespace ShiroTools
         }
 
         // ---- Last upload timestamps ----
+        /// <summary>True once any outfit in this project has a Blueprint ID or a recorded upload —
+        /// the tool was really used here, not just opened (opening alone creates records).</summary>
+        internal static bool HasUsageHistory() =>
+            Data.avatars.Any(a => a.outfits.Any(o =>
+                !string.IsNullOrWhiteSpace(o.blueprintId) ||
+                !string.IsNullOrEmpty(o.lastUploadWindows) ||
+                !string.IsNullOrEmpty(o.lastUploadAndroid) ||
+                !string.IsNullOrEmpty(o.lastUploadIOS)));
+
         internal static void MarkUploaded(OutfitData o, string platform)
         {
             if (o == null) return;

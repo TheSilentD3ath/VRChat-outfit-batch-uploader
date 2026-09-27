@@ -3,6 +3,22 @@
 All notable changes to the VRC Outfit Batch Uploader are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/). Detailed release notes for each version are on the [GitHub Releases page](https://github.com/TheSilentD3ath/VRChat-outfit-batch-uploader/releases).
 
+## [Unreleased]
+
+### Added
+- First-run guide for new users: a card in the window walks through choosing the avatar, creating the Outfits and Items objects (one click, undoable), adding the first outfit and connecting it to VRChat. Steps tick themselves off as you work; skippable, and the **?** in the header brings it back. People who have used the tool before never see it.
+- One-time tips next to Items, Batch Upload and the VRAM counter, for new users after the guide.
+- VRAM counter splits body, outfit and items; texture optimization can optionally include the shared body textures (off by default, always confirmed).
+- Dry run warns when two avatars in the scene share a name (their settings would overwrite each other).
+
+### Fixed
+- Closing the window cancels a running batch; docking or a domain reload no longer breaks it.
+- Express quiet mode survives a domain reload.
+- Text fields for outfits parent, items parent, Blueprint ID and base version no longer save and rebuild on every keystroke.
+- Switching avatars clears the previous avatar's drafts and cached values.
+- Fetch-my-avatars reports an unsupported SDK instead of silently returning nothing.
+- Texture memory leak in the outfit list background; faster texture scanning.
+
 ## [3.3.0] — 2026-08-23 — UI & Backend Optimization
 
 ### Changed

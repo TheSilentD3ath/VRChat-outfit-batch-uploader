@@ -239,8 +239,15 @@ daher:
 Einzelheiten, Verhaltensänderungen und offene Punkte stehen in
 `project-memory/handoffs/2026-09-16-sdkcompat-aktivierung-und-zustandsfixes.md`.
 
-**Erster Unity-Test (26.09.2026) ist fehlgeschlagen, Fix liegt vor, Nachtest
-offen.** Das Testpaket von `2e74c29` kompilierte nicht: `SdkCompat.cs(69,39)`
+**Stand 27.09.2026:** Mit dem Fix `f7c5989` kompiliert der Stand laut Nutzer
+fehlerfrei (Rückmeldung „Fehler scheint weg zu sein"; Editor.log dazu noch
+nicht geprüft, Batch-Nachtest auf neuem Code offen). Danach kam das
+Erststart-Onboarding hinzu (`Editor/OutfitOnboarding.cs`, Handoff
+`project-memory/handoffs/2026-09-27-onboarding.md`), ebenfalls nur statisch
+geprüft. Als Nächstes folgen Outfit-Varianten (Entscheidung: Variante erbt
+alles vom Basis-Outfit, eigen sind nur Name, Items und Blueprint-ID).
+
+**Erster Unity-Test (26.09.2026) ist fehlgeschlagen, Fix liegt vor.** Das Testpaket von `2e74c29` kompilierte nicht: `SdkCompat.cs(69,39)`
 CS0246, `VRCCopyrightAgreement` nicht gefunden — der Datei fehlten die
 VRC-`using`s, mit denen der Code vorher in `OutfitBatchUploader.cs` kompiliert
 hatte. `SdkCompat.cs` war vor diesem Paket nie in Unity kompiliert worden. Weil

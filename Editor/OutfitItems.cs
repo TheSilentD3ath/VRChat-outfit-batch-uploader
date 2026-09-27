@@ -142,6 +142,10 @@ namespace ShiroTools
             EnsureItemsBuilt();
             if (_itemsParent == null || _items.Count == 0) return;
 
+            DrawTip("items",
+                "Items are the accessories under your items object. Tick the ones this outfit uploads with — " +
+                "unticked items stay in the scene but are left out of this upload.");
+
             int inc = _items.Count(it => it.Go != null && ItemIncludedFor(entry.Name, it.Name));
 
             bool exp = _outfitItemsExpanded.TryGetValue(entry.Name, out var e) && e;

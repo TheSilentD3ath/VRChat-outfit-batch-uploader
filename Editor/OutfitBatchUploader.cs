@@ -150,6 +150,7 @@ namespace ShiroTools
             _soundEnabled      = EditorPrefs.GetBool(PREFS_SOUND_ENABLED, true);
             _versionMode       = EditorPrefs.GetInt(PREFS_VERSION_MODE, 0);
             _motionBlur        = EditorPrefs.GetBool(PREFS_MOTION_BLUR, true);
+            InitOnboardingState();
             ScanScene();
             EditorSceneManager.sceneOpened += OnSceneOpened;
             EditorApplication.hierarchyChanged += OnHierarchyChangedInvalidate;
@@ -205,6 +206,7 @@ namespace ShiroTools
             _items = null;
             ClearVramCache();
             MarkBudgetsDirty();
+            if (OnboardingCardVisible) RefreshForOnboarding();
         }
 
         private void OnSceneOpened(Scene scene, OpenSceneMode mode)
@@ -429,10 +431,20 @@ namespace ShiroTools
             if (Event.current.type == EventType.Repaint)
                 _nestedScrollScreenRects.Clear();
             HandleSmoothScrollEvent();
+            _tipsDrawnThisPass.Clear();
+            // One value for the whole pass — the card's buttons change it only after the pass.
+            bool showOnboarding = OnboardingCardVisible;
 
             // ---- Header ----
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("VRC Outfit Batch Uploader", _headerStyle);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.Label("VRC Outfit Batch Uploader", _headerStyle);
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button(new GUIContent("?", "Show the introduction again"),
+                        EditorStyles.miniButton, GUILayout.Width(24)))
+                    AfterGui(RestartOnboarding);
+            }
             EditorGUILayout.Space(4);
 
             DrawTopBar();
@@ -448,9 +460,17 @@ namespace ShiroTools
                 return;
             }
 
+            // New users get the guide where the bare "no Outfits parent" warning used to be,
+            // and keep it above the list until the first outfit is connected to VRChat.
+            if (showOnboarding)
+            {
+                DrawOnboardingCard();
+                EditorGUILayout.Space(4);
+            }
+
             if (_outfitsParent == null)
             {
-                DrawNoOutfitsMessage();
+                if (!showOnboarding) DrawNoOutfitsMessage();
                 return;
             }
 
@@ -744,6 +764,9 @@ namespace ShiroTools
 
                 // Keep the most useful health summary visible even while collapsed.
                 DrawContactCounter(entry);
+                DrawTip("vram",
+                    "▦ VRAM is the texture memory this outfit's upload would use; \"body\" is the part every " +
+                    "outfit carries. The VRAM button shrinks oversized textures and asks before it changes anything.");
 
                 if (!entry.DetailsExpanded)
                 {
@@ -967,6 +990,9 @@ namespace ShiroTools
             int ready     = _outfits.Count(o => o.IncludeInBatch && !string.IsNullOrWhiteSpace(o.BlueprintId));
             int needSetup = included - ready;
 
+            DrawTip("batch",
+                "Ticked outfits upload one after another. If Unity switches platform or recompiles in " +
+                "between, the queue picks up where it left off.");
             using (new EditorGUILayout.HorizontalScope())
             {
                 EditorGUILayout.LabelField("Batch Upload", EditorStyles.boldLabel);

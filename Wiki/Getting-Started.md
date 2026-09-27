@@ -16,6 +16,12 @@ Avatar (VRCAvatarDescriptor + PipelineManager)
 └── Items             ← optional accessories (see [[Items]])
 ```
 
+## First launch
+
+The first time you open the tool on a computer — and only if you've never used it before — a short guide appears in the window. It takes you through four steps: choose your avatar, add the Outfits and Items objects (it can create both for you), add your first outfit, and connect it to VRChat. Each step ticks itself off as you do it. You can skip it at any time; the **?** at the top right brings it back.
+
+After the guide, a few one-time tips appear next to Items, Batch Upload and the VRAM counter. If you have used the tool before, you won't see any of this.
+
 ## The top bar
 
 1. **Avatar root** — drag your avatar's root GameObject here (auto-detected if there's only one avatar in the scene).

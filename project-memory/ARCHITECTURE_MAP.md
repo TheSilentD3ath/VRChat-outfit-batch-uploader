@@ -14,6 +14,10 @@
   einem Batch.
 - `Editor/OutfitItems.cs`: outfitspezifische Auswahl von Zubehör-Objekten.
 - `Editor/OutfitFaceEmo.cs`: outfitspezifischer Capture-/Tag-Swap für FaceEmo.
+- `Editor/OutfitOnboarding.cs`: Erststart-Karte für neue Nutzer (vier Schritte,
+  die den Szenenzustand lesen und sich selbst abhaken; legt auf Wunsch die
+  leeren Outfits-/Items-Objekte an) und einmalige Kontext-Tipps (`DrawTip`).
+  Zustand je Rechner in EditorPrefs `ShiroOutfitUploader_Onboarding`.
 - `Editor/OutfitTextureOptimizer.cs`: Textursammlung, VRAM-Schätzung und
   Importer-Optimierung.
 - `Editor/OutfitContacts.cs`: Budgetauswertung für Contacts, Lights und
