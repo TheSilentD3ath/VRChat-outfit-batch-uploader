@@ -345,6 +345,7 @@ namespace ShiroTools
             ResetItemUiState();
             ResetFaceEmoUiState();
             ResetNewSetupUiState();
+            ResetVariantUiState();
             ClearVramCache();
             MarkBudgetsDirty();
         }
@@ -386,6 +387,26 @@ namespace ShiroTools
                 };
                 LoadBlendShapes(entry);
                 _outfits.Add(entry);
+
+                // Variants: same outfit object, own name / items / Blueprint ID. Blendshapes are
+                // the base's own dictionary instance, so edits on the base apply to them at once.
+                foreach (var vd in OutfitProjectData.GetVariants(avatarKey, entry.Name))
+                {
+                    _outfits.Add(new OutfitEntry
+                    {
+                        Go             = entry.Go,
+                        Name           = vd.name,
+                        BaseName       = entry.Name,
+                        VariantName    = vd.variantName,
+                        Data           = vd,
+                        BlueprintId    = vd.blueprintId ?? "",
+                        IncludeInBatch = vd.includeInBatch,
+                        BuildWindows   = entry.BuildWindows,
+                        BuildAndroid   = entry.BuildAndroid,
+                        BuildIOS       = entry.BuildIOS,
+                        BlendShapes    = entry.BlendShapes
+                    });
+                }
             }
         }
 
@@ -536,6 +557,7 @@ namespace ShiroTools
             _ghostCapture = _motionBlur && _scrollAnimActive;
             if (Event.current.type == EventType.Repaint) _ghostRows.Clear();
 
+            _listSetupOnly = setupOnly;
             _scroll = EditorGUILayout.BeginScrollView(_scroll, GUILayout.ExpandHeight(true));
             for (int i = 0; i < visibleOutfits.Count; i++)
                 DrawOutfitRow(visibleOutfits[i]);
@@ -702,11 +724,11 @@ namespace ShiroTools
         private void DrawOutfitRow(OutfitEntry entry)
         {
             if (entry.Go == null) return;
-            bool isActive = entry.Go.CompareTag("Untagged");
+            bool isActive = IsShownActive(entry);
             bool hasBlueprintId = !string.IsNullOrWhiteSpace(entry.BlueprintId);
             bool idValid = !hasBlueprintId || IsValidBlueprintId(entry.BlueprintId);
 
-            var rowStyle = isActive ? _activeRowStyle : _inactiveRowStyle;
+            var rowStyle = RowStyleFor(entry, isActive);
             using (new EditorGUILayout.VerticalScope(rowStyle))
             {
                 // Compact summary row. Configuration and secondary actions live behind Details.
@@ -714,7 +736,7 @@ namespace ShiroTools
                 {
                     string icon = isActive ? "●" : "○";
                     entry.DetailsExpanded = EditorGUILayout.Foldout(
-                        entry.DetailsExpanded, $"{icon}  {entry.Name}", true,
+                        entry.DetailsExpanded, $"{icon}  {RowLabel(entry)}", true,
                         EditorStyles.foldoutHeader);
                     GUILayout.FlexibleSpace();
 
@@ -815,6 +837,8 @@ namespace ShiroTools
                 if (!hasBlueprintId)
                     DrawInlineNewOutfitButtons(entry);
 
+                // Variants build for their base's platforms (see OutfitVariants.cs).
+                if (!entry.IsVariant)
                 using (new EditorGUILayout.HorizontalScope())
                 {
                     EditorGUILayout.LabelField("Build platforms", EditorStyles.miniLabel, GUILayout.Width(96));
@@ -828,6 +852,7 @@ namespace ShiroTools
                         entry.Data.buildWindows = entry.BuildWindows;
                         entry.Data.buildAndroid = entry.BuildAndroid;
                         entry.Data.buildIOS     = entry.BuildIOS;
+                        SyncVariantPlatforms(entry);
                         OutfitProjectData.Save();
                     }
                 }
@@ -843,12 +868,15 @@ namespace ShiroTools
                     EditorGUILayout.LabelField(last, EditorStyles.miniLabel);
                 }
 
-                // Row 4: blendshape foldout
-                DrawBlendShapeFoldout(entry);
+                // Row 4: blendshape foldout — a variant uses its base's
+                if (!entry.IsVariant) DrawBlendShapeFoldout(entry);
 
-                // Per-outfit item (accessory) selection + FaceEmo
+                // Per-outfit item (accessory) selection + FaceEmo (FaceEmo, too, comes from the base)
                 DrawOutfitItems(entry);
-                DrawOutfitFaceEmo(entry);
+                if (!entry.IsVariant) DrawOutfitFaceEmo(entry);
+
+                if (entry.IsVariant) DrawVariantFooter(entry);
+                else                 DrawAddVariantRow(entry);
 
             EndCard:;
             }
@@ -1144,7 +1172,9 @@ namespace ShiroTools
             {
                 if (entry.Go == null) continue;
 
-                bool   wantActive = (entry == target);
+                // Compare objects, not entries: a variant and its base share one outfit object,
+                // and comparing entries let whichever came last in the list switch it off again.
+                bool   wantActive = (entry.Go == target.Go);
                 string wantTag    = wantActive ? "Untagged" : "EditorOnly";
 
                 bool tagNeedsChange    = entry.Go.tag       != wantTag;
@@ -1195,6 +1225,8 @@ namespace ShiroTools
                 }
                 EditorUtility.SetDirty(_skinRenderer);
             }
+
+            _activatedName = target.Name;
 
             // Apply item (accessory) include/exclude tags for THIS outfit's selection
             ApplyItemStates(target);
@@ -2052,6 +2084,9 @@ namespace ShiroTools
             _activeRowTex     = null;
             _activeRowStyle   = null;
             _inactiveRowStyle = null;
+            // Copies of the row styles — they point at the texture destroyed above.
+            _activeVariantRowStyle   = null;
+            _inactiveVariantRowStyle = null;
             _headerStyle      = null;
             _stylesInited     = false;
         }
@@ -2064,6 +2099,12 @@ namespace ShiroTools
         {
             public GameObject                  Go;
             public string                      Name;
+            // Variants share Go with their base outfit. BaseName is that outfit's name
+            // (null for a normal outfit); settings the variant inherits are keyed by it.
+            public string                      BaseName;
+            public string                      VariantName;
+            public bool                        IsVariant    => !string.IsNullOrEmpty(VariantName);
+            public string                      SettingsName => BaseName ?? Name;
             public string                      BlueprintId      = "";
             public bool                        IncludeInBatch   = true;
             public bool                        BuildWindows     = true;

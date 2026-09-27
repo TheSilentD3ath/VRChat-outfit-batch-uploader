@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Detailed release
 ### Added
 - First-run guide for new users: a card in the window walks through choosing the avatar, creating the Outfits and Items objects (one click, undoable), adding the first outfit and connecting it to VRChat. Steps tick themselves off as you work; skippable, and the **?** in the header brings it back. People who have used the tool before never see it.
 - One-time tips next to Items, Batch Upload and the VRAM counter, for new users after the guide.
+- Outfit variants: upload the same outfit several times with different items, each as its own avatar with its own Blueprint ID (`Outfit – Variant`). Variants share blendshapes, FaceEmo and platforms with their outfit; the dry run warns when renaming an outfit hides its variants.
 - VRAM counter splits body, outfit and items; texture optimization can optionally include the shared body textures (off by default, always confirmed).
 - Dry run warns when two avatars in the scene share a name (their settings would overwrite each other).
 

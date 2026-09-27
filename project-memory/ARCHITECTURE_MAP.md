@@ -18,6 +18,13 @@
   die den Szenenzustand lesen und sich selbst abhaken; legt auf Wunsch die
   leeren Outfits-/Items-Objekte an) und einmalige Kontext-Tipps (`DrawTip`).
   Zustand je Rechner in EditorPrefs `ShiroOutfitUploader_Onboarding`.
+- `Editor/OutfitVariants.cs`: Outfit-Varianten. Eine Variante ist ein normaler
+  `OutfitData`-Datensatz mit `baseOutfit`/`variantName`, Name
+  `"<Basis> – <Variante>"`, und ein `OutfitEntry` mit demselben `Go` wie die
+  Basis. Eigen: Items, Blueprint-ID, Batch, Upload-Historie. Von der Basis:
+  Blendshapes (geteilte Dictionary-Instanz), FaceEmo (`SettingsName`),
+  Plattformen (`SyncVariantPlatforms`). **Regel:** Wer über `_outfits`
+  iteriert und dabei GameObjects schaltet, vergleicht `Go`, nicht Einträge.
 - `Editor/OutfitTextureOptimizer.cs`: Textursammlung, VRAM-Schätzung und
   Importer-Optimierung.
 - `Editor/OutfitContacts.cs`: Budgetauswertung für Contacts, Lights und

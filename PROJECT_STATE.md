@@ -244,8 +244,10 @@ fehlerfrei (Rückmeldung „Fehler scheint weg zu sein"; Editor.log dazu noch
 nicht geprüft, Batch-Nachtest auf neuem Code offen). Danach kam das
 Erststart-Onboarding hinzu (`Editor/OutfitOnboarding.cs`, Handoff
 `project-memory/handoffs/2026-09-27-onboarding.md`), ebenfalls nur statisch
-geprüft. Als Nächstes folgen Outfit-Varianten (Entscheidung: Variante erbt
-alles vom Basis-Outfit, eigen sind nur Name, Items und Blueprint-ID).
+geprüft. Ebenso neu: Outfit-Varianten (`Editor/OutfitVariants.cs`, Handoff
+`project-memory/handoffs/2026-09-27-outfit-varianten.md`). Eine Variante erbt
+Blendshapes, FaceEmo und Plattformen vom Basis-Outfit; eigen sind Name, Items
+und Blueprint-ID. Auch das ist nur statisch geprüft.
 
 **Erster Unity-Test (26.09.2026) ist fehlgeschlagen, Fix liegt vor.** Das Testpaket von `2e74c29` kompilierte nicht: `SdkCompat.cs(69,39)`
 CS0246, `VRCCopyrightAgreement` nicht gefunden — der Datei fehlten die

@@ -38,6 +38,20 @@ In **Defaults → Items (accessories)** you set:
 
 Outfits you haven't set per-item yet inherit these defaults; toggling an item on an outfit overrides the default for that outfit.
 
+## Variants: one outfit, several item sets
+
+Want the same outfit on VRChat more than once — say *Black Dress* plain and *Black Dress* with a bag? Make a **variant** instead of duplicating the outfit object.
+
+1. Open the outfit's details and type a name next to **New variant**, e.g. `With Bag`.
+2. Press **Add Variant**. It appears indented under the outfit as `↳ With Bag`, with the outfit's current item selection already ticked.
+3. Change its items, then upload it as a new avatar with **Express**. On VRChat it is named `Black Dress – With Bag`.
+
+Each variant has its **own** name, item selection, Blueprint ID, batch tick and upload history. It **shares** blendshapes, FaceEmo and build platforms with its outfit: change those on the outfit and every variant follows.
+
+**Remove Variant** in the variant's details forgets it in this tool. The avatar on VRChat is not deleted.
+
+Variants are attached to the outfit's **name**. If you rename the outfit object, its variants are hidden until you rename it back; the dry run tells you when that happens.
+
 ## Notes
 
 - Item inclusion is stored per avatar **and** per outfit in `ProjectSettings/ShiroOutfit_data.json`; legacy EditorPrefs values are migrated automatically when first read.

@@ -70,6 +70,11 @@ namespace ShiroTools
             public string lastUploadIOS     = "";
             public List<BlendShapeOverride> blendShapes   = new List<BlendShapeOverride>();
             public List<ItemOverride>       itemOverrides = new List<ItemOverride>();
+            // Variant of another outfit: same outfit object, own name / items / Blueprint ID /
+            // upload history; blendshapes, FaceEmo and platforms come from baseOutfit.
+            // Both empty (or null in files written before variants existed) = normal outfit.
+            public string baseOutfit  = "";
+            public string variantName = "";
         }
 
         [Serializable]
@@ -312,6 +317,49 @@ namespace ShiroTools
             if (!included && has) av.itemDefaults.Remove(itemName);
             // A default change can affect every outfit's effective value → drop all memos.
             _boolMemo.Clear();
+            Save();
+        }
+
+        // ---- Variants ----
+        internal static bool HasOutfit(string avatarName, string outfitName) =>
+            GetAvatar(avatarName).outfits.Any(o => o.name == outfitName);
+
+        /// <summary>Variant records of <paramref name="baseOutfit"/>, in the order they were added.</summary>
+        internal static List<OutfitData> GetVariants(string avatarName, string baseOutfit) =>
+            GetAvatar(avatarName).outfits
+                .Where(o => !string.IsNullOrEmpty(o.baseOutfit) && o.baseOutfit == baseOutfit)
+                .ToList();
+
+        /// <summary>Variant records whose base outfit is not among <paramref name="existingOutfits"/>
+        /// (renamed or removed in the scene).</summary>
+        internal static List<OutfitData> GetOrphanedVariants(string avatarName, ICollection<string> existingOutfits) =>
+            GetAvatar(avatarName).outfits
+                .Where(o => !string.IsNullOrEmpty(o.baseOutfit) && !existingOutfits.Contains(o.baseOutfit))
+                .ToList();
+
+        internal static OutfitData AddVariant(string avatarName, string baseOutfit, string variantName, string recordName)
+        {
+            var baseData = GetOutfit(avatarName, baseOutfit);
+            var o = new OutfitData
+            {
+                name         = recordName,
+                baseOutfit   = baseOutfit,
+                variantName  = variantName,
+                buildWindows = baseData.buildWindows,
+                buildAndroid = baseData.buildAndroid,
+                buildIOS     = baseData.buildIOS
+            };
+            GetAvatar(avatarName).outfits.Add(o);
+            Save();
+            return o;
+        }
+
+        /// <summary>Forgets an outfit or variant record. Nothing on VRChat is touched.</summary>
+        internal static void RemoveOutfit(string avatarName, string outfitName)
+        {
+            var av = GetAvatar(avatarName);
+            if (av.outfits.RemoveAll(o => o.name == outfitName) == 0) return;
+            ClearCaches();
             Save();
         }
 
