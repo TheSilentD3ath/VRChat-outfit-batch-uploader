@@ -96,6 +96,12 @@ namespace ShiroTools
         private static bool IsValidBlueprintId(string id) =>
             !string.IsNullOrWhiteSpace(id) && BLUEPRINT_ID_REGEX.IsMatch(id.Trim());
 
+        // "rig", "rigs", "rigged", "rigging" as whole words — see HandleBatchError.
+        private static readonly System.Text.RegularExpressions.Regex RIG_WORD_REGEX =
+            new System.Text.RegularExpressions.Regex(
+                @"\brig(s|ged|ging)?\b",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
         // ---- State ----
         [SerializeField] private GameObject _avatarRoot;
         private List<GameObject>     _avatarsInScene   = new List<GameObject>();
@@ -1667,9 +1673,12 @@ namespace ShiroTools
             string outfitName = failed.outfit;
             VRCPlatform platform = ParsePlatform(failed.platform);
 
+            // "rig" as a whole word only: a bare Contains("rig") also hit "copyright", "right" and
+            // "original", so e.g. an ownership or network error was skipped as a validation error
+            // — for every remaining outfit, without asking — instead of stopping to ask.
             bool isValidation = ex.GetType().Name.Contains("Validation") ||
                                 ex.Message.Contains("bone") || ex.Message.Contains("Bone") ||
-                                ex.Message.Contains("rig") || ex.Message.Contains("humanoid") ||
+                                RIG_WORD_REGEX.IsMatch(ex.Message) || ex.Message.Contains("humanoid") ||
                                 ex.Message.Contains("Chest") || ex.Message.Contains("validation");
 
             string shortMsg = ex.Message.Length > 120 ? ex.Message.Substring(0, 120) + "…" : ex.Message;
