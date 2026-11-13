@@ -44,3 +44,32 @@ Switching the Unity build target forces a **domain reload** (scripts recompile, 
 - Blendshape values are **restored** to their original state after the batch.
 - If an outfit disappears after the queue is created, it is recorded as failed rather than counted as a successful upload.
 - Queue and resume state are cleaned up after completion or cancellation.
+
+## Upload log and timing
+
+Every upload is recorded in `ProjectSettings/ShiroOutfit_upload.log`. The **Log** button next to **Dry run** opens it.
+
+Besides the result (`OK` / `FAIL`), each batch upload writes a `TIME` line showing where its time went:
+
+| Phase | What it covers |
+| --- | --- |
+| `activate` | switching outfit, items, blendshapes and FaceEmo |
+| `save` | saving the scene and assets before the build |
+| `fetch` | reading the avatar record from VRChat |
+| `build` | the SDK processing the avatar and packing its file |
+| `upload` | the SDK sending the file |
+| `sdk other` | the SDK's checks before the build and its refresh afterwards |
+| `tool wait` | this tool's own fixed pauses |
+
+`file` is the size of the uploaded avatar file. A platform switch gets its own `TIME` line. When the batch ends, a summary with the average and share of each phase is written to the log and the Unity Console, and one line of it appears in the status box.
+
+`build` and `upload` come from events the VRChat SDK sends. If the SDK does not send one, the phase is shown as `?` and its time is counted under `sdk other`. Express uploads of new avatars are not measured.
+
+## Blueprint IDs from your account
+
+Instead of pasting an `avtr_…` ID you can take it from your VRChat account:
+
+- **▾** next to an outfit's Blueprint ID field lists your avatars; picking one assigns its ID to that outfit.
+- **☁ IDs** in the top bar fetches your avatars and offers to assign IDs to all outfits that have none yet, matched by name (the outfit's name, or the name your Express template would give it). Nothing is assigned before you confirm the list.
+
+Only avatars that belong to the logged-in account are ever offered.

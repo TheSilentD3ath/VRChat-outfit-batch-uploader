@@ -26,6 +26,8 @@ A Unity Editor tool for VRChat avatar creators who manage multiple outfits under
 - **Texture / VRAM optimizer:** One-click texture compression + resolution capping using Thry's recommendations, optionally including the items selected for that outfit.
 - **Live budget counters:** Per outfit, see Contacts (rank + 256 cap), realtime Lights, and expression Parameters (VRCFury-aware).
 - **Quality-of-life:** All/None batch selection, search + scrolling on long lists, automatic copyright-dialog confirmation.
+- **Upload log with timing:** Every upload is logged with how long activating, saving, building and uploading took and how large the file was; a batch ends with a summary of where the time went. The **Log** button opens it.
+- **Blueprint IDs from your account:** Pick an avatar from a list (**▾**) or let **☁ IDs** match outfits to your avatars by name, instead of pasting IDs.
 - **Focused workspace:** Separate **Outfits**, **New Outfit**, and **Defaults** tabs, compact outfit cards, expandable configuration, and an always-visible batch footer.
 
 ## Interface

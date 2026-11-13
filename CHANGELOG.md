@@ -11,8 +11,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Detailed release
 - Outfit variants: upload the same outfit several times with different items, each as its own avatar with its own Blueprint ID (`Outfit – Variant`). Variants share blendshapes, FaceEmo and platforms with their outfit; the dry run warns when renaming an outfit hides its variants.
 - VRAM counter splits body, outfit and items; texture optimization can optionally include the shared body textures (off by default, always confirmed).
 - Dry run warns when two avatars in the scene share a name (their settings would overwrite each other).
+- Upload timing: every batch upload writes a `TIME` line to the upload log showing how long activating, saving, building and uploading took and how large the file was; a batch ends with a summary of where the time went. A **Log** button next to Dry run opens the upload log.
 
 ### Fixed
+- **☁ IDs** and the **▾** avatar picker never returned any avatars: they relied on an SDK function that does not exist in any SDK version. They now load the account's avatars through the SDK's public request API, and only ever offer avatars the logged-in account owns.
 - Closing the window cancels a running batch; docking or a domain reload no longer breaks it.
 - Express quiet mode survives a domain reload.
 - Text fields for outfits parent, items parent, Blueprint ID and base version no longer save and rebuild on every keystroke.

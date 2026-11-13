@@ -44,6 +44,11 @@ Seit v3.3.0, jeweils mit Handoff:
   noch als ganzes Wort, Select ohne Blueprint-ID leert die ID am Avatar,
   Build-Skript im Repo, Doku nachgezogen → `2026-11-13-review-fixes.md`
 
+- **Avatar-Liste repariert, Zeitmessung** (13.11.): „☁ IDs" und ▾ holen die
+  Liste jetzt über `VRCApi.Get`; jeder Batch-Upload schreibt eine `TIME`-Zeile
+  ins Upload-Log, am Ende steht eine Zusammenfassung; neuer Knopf „Log" →
+  `2026-11-13-avatarliste-und-zeitmessung.md`
+
 Nutzersicht dazu: `CHANGELOG.md`, Abschnitt `[Unreleased]`.
 
 ## Prüfstand
@@ -54,6 +59,8 @@ Nutzersicht dazu: `CHANGELOG.md`, Abschnitt `[Unreleased]`.
 | Paket von `2e74c29` | **nein** — `SdkCompat.cs` CS0246 | — |
 | `f7c5989` | laut Nutzer ja („Fehler scheint weg"), Editor.log nicht geprüft | nein |
 | Testpaket `a9d3ce4` (Onboarding, Varianten, alle Review-Fixes inkl. Select-Fix) | laut Nutzer ja: „läuft" auf SDK 3.10.6 / Unity 2022.3.22f1 (13.11., Editor.log nicht geprüft) | läuft; welche Funktionen ausprobiert wurden, ist noch offen |
+
+| Avatar-Liste und Zeitmessung (nach `a9d3ce4`) | **nein** | **nein** |
 
 Wichtig: Der 34-Outfit-Batch vom 26.09. (33/34 OK) lief auf dem **alten**
 geladenen Code, weil der Compile des Testpakets fehlgeschlagen war. Er belegt
@@ -71,9 +78,14 @@ nichts über den unveröffentlichten Stand.
    Outfit → seine ID steht wieder drin. Die Zeile „Base Version" bleibt dabei
    sichtbar und behält ihren Wert.
 4. Batch auf dem neuen Code wiederholen (es darf weiterhin nur **eine**
-   Eigentumsabfrage kommen); Variante per Express hochladen.
-5. Avatare in VRChat prüfen (vom Nutzer angekündigt).
-6. Erst dann, auf ausdrücklichen Auftrag: Versionsnummer (README-Kopfzeile
+   Eigentumsabfrage kommen); Variante per Express hochladen. Danach steht in
+   der Statusbox eine Zeile „Timing: …", und **Log** öffnet das Upload-Log mit
+   einer `TIME`-Zeile pro Upload. Zeigt eine Phase „?", hat das SDK das
+   Ereignis nicht gesendet — bitte melden.
+5. **☁ IDs** und **▾** drücken: Es muss die Liste der eigenen Avatare kommen.
+   Kommt eine Fehlermeldung, deren Wortlaut zurückmelden.
+6. Avatare in VRChat prüfen (vom Nutzer angekündigt).
+7. Erst dann, auf ausdrücklichen Auftrag: Versionsnummer (README-Kopfzeile
    steht noch auf v3.3), `[Unreleased]` im Changelog abschließen, Paket, Tag,
    Release, Wiki-Abgleich.
 
@@ -83,11 +95,14 @@ nichts über den unveröffentlichten Stand.
   auch eine, die das Tool keinem Outfit zuordnen kann (etwa von einem Upload
   vor der Tool-Nutzung). Die wird in die Console geschrieben und ist per
   Strg+Z wieder holbar, steht danach aber nicht mehr im Inspector.
-- **„☁ IDs" und der ▾-Auswahlknopf können nicht funktionieren:** Sie rufen
-  `VRCApi.GetAvatars` auf, das es in keinem SDK von 3.3.0 bis 3.10.6 gibt
-  (Einzelheiten und zwei Reparaturwege in `SDK_NOTES.md`). Onboarding-Schritt 4
-  verweist seit dem 13.11. auf ▾; das ist bis zur Reparatur falsch. Reparatur
-  dem Nutzer angeboten, Antwort offen.
+- **„☁ IDs" und ▾ sind repariert, aber noch nie gelaufen.** Bis zum 13.11.
+  riefen sie `VRCApi.GetAvatars` auf, das es in keinem SDK gibt. Die neue
+  Abfrage ist aus dem SDK-Quelltext abgeleitet (`SDK_NOTES.md`), ob der Server
+  so antwortet wie erwartet, zeigt erst der Test beim Nutzer.
+- **Zeitmessung nur im Batch.** Express-Uploads neuer Avatare werden nicht
+  gemessen. Was die Messung ergibt, entscheidet über die nächsten Schritte bei
+  der Upload-Zeit (Outfits vor dem Build ausblenden, Upload und Build
+  überlappen, unnötiges Szenenspeichern).
 
 - Kein `.asmdef`, keine Tests, keine CI — siehe Abschnitt Umgebung.
 - Identität über Namen: Umbenennen eines Outfits verliert seine Einstellungen
@@ -129,3 +144,5 @@ projektspezifische Zustand.
 - `2026-09-27-onboarding.md`
 - `2026-09-27-outfit-varianten.md`
 - `2026-11-13-review-fixes.md`
+- `2026-11-13-avatarliste-und-zeitmessung.md`
+- Nachschlagewerk, kein Handoff: `project-memory/SDK_NOTES.md`

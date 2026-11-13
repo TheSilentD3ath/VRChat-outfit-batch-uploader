@@ -31,7 +31,15 @@
   Parameter.
 - `Editor/OutfitDryRun.cs`: nichtdestruktive Vorabprüfung eines Uploads.
 - `Editor/OutfitApiTools.cs`: Avatarliste, Thumbnail-Update und
-  Einstellungs-Export/Import über die VRChat-API.
+  Einstellungs-Export/Import über die VRChat-API. Die Liste kommt über das
+  öffentliche `VRCApi.Get<List<VRCAvatar>>("avatars", …)` und wird auf Avatare
+  des angemeldeten Kontos gefiltert (`AuthorId`).
+- `Editor/OutfitTiming.cs`: Zeitmessung des Batches. Pro Upload eine
+  `TIME`-Zeile im Upload-Log, am Batch-Ende eine Zusammenfassung. Bau- und
+  Upload-Dauer kommen aus den öffentlichen Builder-Ereignissen des SDK
+  (`OnSdkBuildStart/Finish`, `OnSdkUploadStart/Finish`); die Summen liegen als
+  JSON im SessionState und überleben so den Plattformwechsel. Messen darf
+  einen Upload nie abbrechen — alles dort fängt seine Ausnahmen selbst.
 - `Editor/SdkCompat.cs`: einziger Anlaufpunkt für Reflection in VRChat-SDK- und
   Unity-Interna. Lookups sind gecacht, fehlende Typen und Methoden warnen
   einmalig und deaktivieren nur das betroffene Feature. **Regel:** Als Typ
