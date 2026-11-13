@@ -95,7 +95,7 @@ namespace ShiroTools
             catch (AmbiguousMatchException)
             {
                 // Overloads exist but the caller binds arguments by name/type anyway
-                // (BuildGetAvatarsArgs / UpdateAvatarImageAsync) — take the first by name.
+                // (UpdateAvatarImageAsync) — take the first by name.
                 m = type.GetMethods(flags).FirstOrDefault(x => x.Name == name);
             }
 
@@ -129,43 +129,9 @@ namespace ShiroTools
             }
         }
 
-        // ============================================================
-        //  VRCApi.GetAvatars — signature differs between SDK versions
-        //  Returns one page; caller handles paging.
-        // ============================================================
-        public static MethodInfo GetAvatarsMethod =>
-            FindMethod(typeof(VRCApi), "GetAvatars",
-                BindingFlags.Public | BindingFlags.Static, "Fetch my avatars");
-
-        /// <summary>Builds the argument array for a paged GetAvatars call by
-        /// matching parameter names/types instead of a hard-coded order.</summary>
-        public static object[] BuildGetAvatarsArgs(MethodInfo method, int pageSize, int offset)
-        {
-            var pars = method.GetParameters();
-            object[] args = new object[pars.Length];
-            for (int i = 0; i < pars.Length; i++)
-            {
-                var p = pars[i];
-                string pn = (p.Name ?? "").ToLowerInvariant();
-                if (p.ParameterType == typeof(int) && pn.Contains("offset")) args[i] = offset;
-                else if (p.ParameterType == typeof(int))                     args[i] = pageSize;
-                else if (p.HasDefaultValue)                                  args[i] = p.DefaultValue;
-                else args[i] = p.ParameterType.IsValueType ? Activator.CreateInstance(p.ParameterType) : null;
-            }
-            return args;
-        }
-
-        /// <summary>Awaits a Task returned via reflection and extracts Result,
-        /// with an explicit error when the SDK returned a plain non-generic Task.</summary>
-        public static async Task<object> InvokeTaskWithResultAsync(MethodInfo method, object[] args, string feature)
-        {
-            var task = (Task)method.Invoke(null, args);
-            await task;
-            var resultProp = task.GetType().GetProperty("Result");
-            if (resultProp == null)
-                throw new Exception($"{feature}: SDK returned a Task without a result — SDK version not supported by this feature.");
-            return resultProp.GetValue(task);
-        }
+        // (The former GetAvatars helpers lived here. They looked up VRCApi.GetAvatars, a method
+        //  that exists in no SDK from 3.3.0 to 3.10.6, so the avatar list never loaded. Listing
+        //  now goes through the SDK's public VRCApi.Get — see OutfitApiTools.FetchAvatarListAsync.)
 
         // ============================================================
         //  VRCApi.UpdateAvatarImage — parameter order varies per version

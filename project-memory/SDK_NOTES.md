@@ -76,6 +76,15 @@ funktionieren** — sie enden mit „This SDK version has no VRCApi.GetAvatars".
 Der Onboarding-Text (Schritt 4) und `PROJECT_STATE.md` verweisen seit dem
 13.11. auf ▾; das ist bis zu einer Reparatur falsch.
 
+**Repariert am 13.11.** über den ersten der beiden Wege unten (Laufzeittest
+beim Nutzer noch offen). `VRCApi.Get<T>` hat in 3.8.0 dieselbe Signatur wie in
+3.10.6 und ist mit `[PublicAPI]` markiert; das SDK ruft es selbst mit einem
+Listentyp auf (`Get<List<VRCAvatarStyle>>("avatarStyles")`). Die
+Parameternamen `user`, `me`, `releaseStatus`, `offset` stehen als Zeichenketten
+in `VRCCore-Editor.dll`. Zusätzlich filtert das Tool auf
+`AuthorId == APIUser.CurrentUser?.id` — genau der Vergleich, den das SDK
+selbst für die Eigentumsprüfung benutzt.
+
 Zwei Wege, die Liste zu holen:
 - `VRCApi.Get<T>(string requestUrl, Dictionary<string, string> queryParams = null, bool forceRefresh = false, bool allowRetry = false, CancellationToken cancellationToken = default)`
   ist in 3.10.6 öffentlich; mit `T = List<VRCAvatar>` und dem Endpunkt

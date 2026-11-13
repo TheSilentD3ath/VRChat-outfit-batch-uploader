@@ -6,8 +6,9 @@
 //    API so Blueprint IDs can be picked from a menu (▾ next to
 //    the ID field) instead of copy-pasting, and auto-matched to
 //    outfits by name (☁ IDs button in the top bar).
-//    VRCApi.GetAvatars is reached via reflection so this module
-//    degrades gracefully on SDK versions where it differs.
+//    The list comes from the SDK's public VRCApi.Get against the
+//    "avatars" endpoint; only avatars the logged-in account owns
+//    are ever offered.
 //  • Thumbnail update: per-outfit "Thumb" button — captures a
 //    new thumbnail (with preview!) and uploads ONLY the image,
 //    without rebuilding the avatar.
@@ -68,58 +69,52 @@ namespace ShiroTools
             }
         }
 
-        /// <summary>Pages through VRCApi.GetAvatars via reflection (signature differs between
-        /// SDK versions). Throws with a clear message when the method doesn't exist.</summary>
+        /// <summary>Pages through the avatars of the logged-in account.
+        /// VRCApi has no "list my avatars" call — the VRCApi.GetAvatars this module used to look
+        /// up by reflection exists in no SDK from 3.3.0 to 3.10.6, so ☁ IDs and the ▾ picker
+        /// never returned anything. The SDK's public generic request (VRCApi.Get, marked
+        /// [PublicAPI], same signature in 3.8.0 and 3.10.6) against the "avatars" endpoint
+        /// returns the same VRCAvatar records VRCApi.GetAvatar does.</summary>
         private static async Task<List<VRCAvatar>> FetchAvatarListAsync()
         {
+            string myId = APIUser.CurrentUser?.id;
+            if (string.IsNullOrEmpty(myId))
+                throw new Exception("Not logged in to the VRChat SDK.");
+
             var results = new List<VRCAvatar>();
-
-            var method = SdkCompat.GetAvatarsMethod;
-            if (method == null)
-                throw new Exception("This SDK version has no VRCApi.GetAvatars — paste Blueprint IDs manually.");
-
+            var seen = new HashSet<string>();
+            bool sawForeign = false;
             const int PAGE = 50;
 
-            for (int offset = 0; offset < 1000; )
+            for (int offset = 0; offset < 2000; offset += PAGE)
             {
-                // SdkCompat binds the arguments by parameter name/type and raises an explicit
-                // error when the SDK hands back a Task without a Result (instead of paging
-                // out silently on an empty list).
-                object result = await SdkCompat.InvokeTaskWithResultAsync(
-                    method, SdkCompat.BuildGetAvatarsArgs(method, PAGE, offset), "Fetch my avatars");
+                var query = new Dictionary<string, string>
+                {
+                    { "user", "me" },
+                    { "releaseStatus", "all" },
+                    { "n", PAGE.ToString() },
+                    { "offset", offset.ToString() }
+                };
+                List<VRCAvatar> page = await VRCApi.Get<List<VRCAvatar>>("avatars", query, forceRefresh: true);
+                if (page == null || page.Count == 0) break;
 
-                var page = ExtractAvatars(result);
-                if (page.Count == 0) break;
-                results.AddRange(page);
-                if (page.Count < PAGE) break;
-                offset += page.Count;
+                int added = 0;
+                foreach (var a in page)
+                {
+                    if (string.IsNullOrEmpty(a.ID) || !seen.Add(a.ID)) continue;
+                    added++;
+                    // Only ever offer avatars this account owns, whatever the server sent back:
+                    // an ID that belongs to someone else must never end up on an outfit.
+                    if (a.AuthorId == myId) results.Add(a);
+                    else sawForeign = true;
+                }
+                // Nothing new on this page → the end (or a server ignoring the offset).
+                if (added == 0) break;
             }
+
+            if (results.Count == 0 && sawForeign)
+                throw new Exception("VRChat returned avatars, but none of them belong to the logged-in account.");
             return results;
-        }
-
-        /// <summary>Pulls VRCAvatar entries out of whatever GetAvatars returned
-        /// (a plain list, or a wrapper object holding an enumerable).</summary>
-        private static List<VRCAvatar> ExtractAvatars(object result)
-        {
-            var list = new List<VRCAvatar>();
-            if (result == null) return list;
-
-            if (result is IEnumerable<VRCAvatar> direct)
-            {
-                list.AddRange(direct);
-                return list;
-            }
-
-            foreach (var prop in result.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (prop.PropertyType == typeof(string)) continue;
-                if (!typeof(System.Collections.IEnumerable).IsAssignableFrom(prop.PropertyType)) continue;
-                if (prop.GetValue(result) is System.Collections.IEnumerable en)
-                    foreach (var item in en)
-                        if (item is VRCAvatar a) list.Add(a);
-                if (list.Count > 0) return list;
-            }
-            return list;
         }
 
         // ---- Per-outfit picker (▾ button next to the Blueprint ID field) ----
