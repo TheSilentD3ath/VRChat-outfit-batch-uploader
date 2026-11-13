@@ -33,8 +33,12 @@
 - `Editor/OutfitApiTools.cs`: Avatarliste, Thumbnail-Update und
   Einstellungs-Export/Import über die VRChat-API.
 - `Editor/SdkCompat.cs`: einziger Anlaufpunkt für Reflection in VRChat-SDK- und
-  Unity-Interna. Lookups sind gecacht, fehlende Methoden warnen einmalig und
-  deaktivieren nur das betroffene Feature.
+  Unity-Interna. Lookups sind gecacht, fehlende Typen und Methoden warnen
+  einmalig und deaktivieren nur das betroffene Feature. **Regel:** Als Typ
+  (`typeof`, Variablentyp) dürfen nur dokumentierte öffentliche SDK-Typen
+  stehen (`VRCApi`, `VRCAvatar`). Alles andere wird über `FindType` per Name
+  gesucht — ein `typeof` auf eine SDK-Interna-Klasse lässt bei einem SDK-Update
+  das gesamte Plugin nicht mehr kompilieren.
 
 ## Zustands- und Datenfluss
 

@@ -24,17 +24,56 @@ using VRC.SDK3.Avatars.Components;
 using VRC.SDKBase;
 using VRC.SDKBase.Editor;
 using VRC.SDKBase.Editor.Api;   // VRCApi, VRCAvatar
-// Same VRC import set OutfitBatchUploader.cs compiled VRCCopyrightAgreement with
-// before the move here — with only VRC.Core + VRC.SDKBase.Editor.Api it fails (CS0246).
+// The VRC import set OutfitBatchUploader.cs compiles with. Only VRCApi / VRCAvatar (public
+// SDK API) are referenced as types here; SDK internals are looked up by name — see FindType.
 
 namespace ShiroTools
 {
     internal static class SdkCompat
     {
-        // ---- Cached MethodInfo lookups (null = known-missing, don't re-warn) ----
+        // ---- Cached lookups (null = known-missing, don't re-warn) ----
         private static readonly Dictionary<string, MethodInfo> _methods =
             new Dictionary<string, MethodInfo>();
+        private static readonly Dictionary<string, Type> _types =
+            new Dictionary<string, Type>();
         private static readonly HashSet<string> _warned = new HashSet<string>();
+
+        /// <summary>Resolves an SDK type by its simple name, once, across the loaded assemblies.
+        /// Use this instead of typeof() for anything that is not documented public SDK API:
+        /// typeof() is a compile-time reference, so a class the SDK moves or removes stops the
+        /// WHOLE plugin from compiling — a name lookup only switches off the one feature.</summary>
+        private static Type FindType(string simpleName, string feature)
+        {
+            if (_types.TryGetValue(simpleName, out var cached)) return cached;
+
+            Type found = null;
+            // SDK assemblies first — on a hit nothing else gets scanned.
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies()
+                .OrderBy(a => IsSdkAssembly(a) ? 0 : 1);
+            foreach (var asm in assemblies)
+            {
+                Type[] candidates;
+                try { candidates = asm.GetTypes(); }
+                catch (ReflectionTypeLoadException ex) { candidates = ex.Types; }   // partly loadable
+                catch (Exception) { continue; }
+                if (candidates == null) continue;
+
+                found = candidates.FirstOrDefault(t => t != null && t.Name == simpleName);
+                if (found != null) break;
+            }
+
+            if (found == null && _warned.Add("type::" + simpleName))
+                Debug.LogWarning($"[OutfitBatchUploader] {feature}: type '{simpleName}' not found in this SDK version — feature disabled, manual flow still works.");
+
+            _types[simpleName] = found;   // cache the miss too
+            return found;
+        }
+
+        private static bool IsSdkAssembly(Assembly assembly)
+        {
+            try { return (assembly.GetName().Name ?? "").IndexOf("VRC", StringComparison.OrdinalIgnoreCase) >= 0; }
+            catch (Exception) { return false; }   // nameless / dynamic assembly — not the SDK
+        }
 
         /// <summary>Resolves a method once and caches the result (hits and misses alike).
         /// Pass <paramref name="signature"/> when the SDK/Unity type has overloads of this
@@ -72,8 +111,12 @@ namespace ShiroTools
         // ============================================================
         public static async Task<bool> AgreeCopyrightAsync(string blueprintId)
         {
-            var m = FindMethod(typeof(VRCCopyrightAgreement), "Agree",
-                BindingFlags.NonPublic | BindingFlags.Static, "Copyright pre-consent");
+            // By name, not typeof(VRCCopyrightAgreement): that reference is what failed the first
+            // Unity compile of this file (CS0246). Public | NonPublic so the lookup also survives
+            // the SDK changing the method's visibility.
+            var type = FindType("VRCCopyrightAgreement", "Copyright pre-consent");
+            var m = type == null ? null : FindMethod(type, "Agree",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, "Copyright pre-consent");
             if (m == null) return true;   // SDK dialog will appear normally instead
             try
             {
