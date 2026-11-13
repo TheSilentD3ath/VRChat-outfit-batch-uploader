@@ -19,6 +19,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Detailed release
 - Switching avatars clears the previous avatar's drafts and cached values.
 - Fetch-my-avatars reports an unsupported SDK instead of silently returning nothing.
 - Texture memory leak in the outfit list background; faster texture scanning.
+- Upload errors whose text merely contains "rig" (as in "copyright" or "right") are no longer mistaken for avatar validation errors and skipped without asking.
+- The copyright pre-consent no longer depends on an SDK class at compile time: if a VRChat SDK update moves or removes it, only that convenience switches off instead of the whole tool failing to compile.
 
 ## [3.3.0] — 2026-08-23 — UI & Backend Optimization
 

@@ -89,10 +89,6 @@ namespace ShiroTools
             foreach (var n in dupNames)
                 Err($"Two or more outfits are named \"{n}\" — their saved settings collide. Rename one.");
 
-            // Duplicate AVATAR names → the project store is keyed by avatar name, so two
-            // identically named avatars in the scene share ONE record. The outfit-name check
-            // above catches collisions within an avatar; this catches them across avatars,
-            // which is the case the Quick-pick row makes easy to walk into.
             // Variants hang on their base outfit's NAME — renaming the outfit object hides them.
             if (_avatarRoot != null && _outfitsParent != null)
             {
@@ -102,6 +98,10 @@ namespace ShiroTools
                          $"\"{_outfitsParent.name}\" — the variant is hidden. Rename the outfit back to show it again.");
             }
 
+            // Duplicate AVATAR names → the project store is keyed by avatar name, so two
+            // identically named avatars in the scene share ONE record. The outfit-name check
+            // above catches collisions within an avatar; this catches them across avatars,
+            // which is the case the Quick-pick row makes easy to walk into.
             var dupAvatars = _avatarsInScene.Where(a => a != null)
                                             .GroupBy(a => a.name)
                                             .Where(g => g.Count() > 1)

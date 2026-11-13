@@ -8,7 +8,9 @@
 //  sets the PipelineManager blueprintId, applies per-outfit
 //  blendshape overrides, and triggers the VRC SDK build + upload.
 //
-//  Settings are saved in EditorPrefs and persist across sessions.
+//  Per-avatar / per-outfit data lives in the project
+//  (ProjectSettings/ShiroOutfit_data.json — see OutfitProjectData.cs);
+//  window preferences and Express defaults live in EditorPrefs.
 // ============================================================
 
 using System;

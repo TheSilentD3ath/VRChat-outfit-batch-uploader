@@ -1,260 +1,118 @@
 # VRChat Outfit Batch Uploader – Projektstatus
 
-Letzte Aktualisierung: 16. September 2026
+Letzte Aktualisierung: 13. November 2026
 
-## Baseline
+Diese Datei beschreibt nur den **aktuellen Stand**. Wie es dazu kam, steht in
+den Handoffs unter `project-memory/handoffs/` (Liste unten). Die frühere
+ausführliche Chronik dieser Datei ist über `git show e9958f9:PROJECT_STATE.md`
+abrufbar.
 
-- Codex-Arbeitskopie: GitHub `main`, Commit
-  `75943eeb4c90317044bf1a25f592348e5fa20963` (`v3.1.1`).
-- Öffentliche Tags: `3.0.0` und `3.1.0`; `main` enthält danach den
-  v3.1.1-Fix-Commit.
-- Zielumgebung: Unity 2022.x mit VRChat Avatars SDK.
-- Installierte und vom Nutzer zum Synchronisieren/Testen freigegebene Kopie:
-  im laufenden Unity-Projekt `Main avi` auf Laufwerk `D:`. Unity darf
-  Änderungen am Pluginordner automatisch neu kompilieren.
-- Der dortige innere Ordnername `VRChat-outfit-batch-uploader-2.0.0` ist nur
-  ein falscher Altname; der Inhalt ist nicht Version 2.0.
+## Umgebung
 
-## Migrierter Claude-Arbeitsstand
+- Unity 2022.x (kompiliert zuletzt mit 2022.3.22f1) mit VRChat Avatars SDK.
+- Freigegebenes Unity-Testziel: der Pluginordner im Projekt `Main avi` auf `D:`
+  (genauer Pfad und Regeln in `AGENTS.md`). Der innere Ordnername `…-2.0.0`
+  ist ein falscher Altname und sagt nichts über die Version.
+- In den Cloud-Sitzungen gibt es keinen C#-Compiler und kein Unity. Alles, was
+  dort entsteht, ist nur statisch geprüft, bis der Nutzer es in Unity importiert.
 
-Der Unity-Liveordner stimmt nach normalisiertem Textvergleich mit dem
-GitHub-Stand überein, abgesehen von einer zusätzlichen Änderung in
-`Editor/OutfitTextureOptimizer.cs`: Optional werden auch die Texturen der für
-ein Outfit ausgewählten Items in den Optimierungsplan aufgenommen. Diese
-Änderung wurde in die Codex-Arbeitskopie übernommen und wird vom Nutzer im
-Unity-Projekt bereits erfolgreich verwendet. Sie ist jedoch weder in GitHub
-`main` auf Commit `75943ee` noch im veröffentlichten Release-Asset
-`VRChat-outfit-batch-uploader-3.1.0.unitypackage` enthalten. Das Asset wurde am
-11. Juli 2026 veröffentlicht; sein tatsächlicher Inhalt wurde am 23. August
-2026 entpackt und geprüft.
+## Veröffentlicht
 
-## Für Git vorbereiteter Arbeitsstand
+| Version | Tag auf | Asset | Größe | SHA-256 |
+| --- | --- | --- | --- | --- |
+| 3.2.0 | `79ae6b0` | `VRChat-outfit-batch-uploader-3.2.0.unitypackage` | 113351 | `2AA0E1969CD8546341CC9CE597212C42F06F552FAB58B9854C7C25D51E59281E` |
+| 3.3.0 | `5aca50e` | `VRChat-outfit-batch-uploader-3.3.0.unitypackage` | 127687 | `3CF8A1D07E4A9354965E671FAE3FA8D34F3DB4238733C5842E4B571B720A323E` |
 
-Die Item-VRAM-Erweiterung wurde am 23. August 2026 erneut statisch geprüft und
-für eine spätere Veröffentlichung dokumentiert. Outfit und ausgewählte Items
-werden über einen gemeinsamen Plan verarbeitet; das bestehende `HashSet`
-dedupliziert gemeinsam verwendete Texturen. Manuelle und Express-Optimierung
-verwenden denselben Plan, und die Vorschau nennt die Anzahl einbezogener Items.
+Ältere Tags: `3.0.0`, `3.1.0`; `main` enthielt danach den v3.1.1-Fix `75943ee`.
+v3.3.0 (Source-Commit `3c28eb7`) ist der letzte Stand, der in Unity kompiliert
+**und** im Editor sichtgeprüft wurde. Das GitHub-Wiki wurde dafür mit `ca3659c`
+aktualisiert.
 
-Als Sicherheitskorrektur ist die neue Item-Option in der Arbeitskopie nun
-standardmäßig deaktiviert. Dadurch kann ein bereits auf "nicht mehr fragen"
-gestellter Express-Workflow nach einem Plugin-Update nicht ohne explizites
-Opt-in erstmals Item-Texturen verändern. Ein bereits gespeicherter
-`ShiroNewOutfit_OptItems`-Wert bleibt wirksam.
+## Unveröffentlicht (Branch `claude/youthful-gates-udtpmv`)
 
-README, Wiki und `RELEASE_NOTES_v3.2.md` beschreiben die Funktion, die
-Deduplizierung und die globalen Auswirkungen gemeinsam verwendeter
-TextureImporter-Einstellungen.
+Seit v3.3.0, jeweils mit Handoff:
 
-Am 23. August 2026 wurde ausschließlich
-`Editor/OutfitTextureOptimizer.cs` aus der Git-Arbeitskopie in den freigegebenen
-Pluginordner auf `D:` synchronisiert; Quell- und Ziel-SHA-256 waren identisch.
-Andere Dateien des Unity-Projekts wurden nicht verändert. Eine automatische
-Unity-Kompilierung konnte noch nicht bestätigt werden: Es war kein laufender
-Unity-Prozess sichtbar, `Editor.log`, `Temp/UnityLockfile` und die zuletzt
-gebauten ScriptAssemblies stammen vom 8. August 2026. Der Kompilierungs- und
-manuelle Regressionstest bleibt daher offen.
+- **SdkCompat, Zustands- und Performance-Fixes, VRAM-Umfang** (`54a0bb6` bis
+  `2e74c29`, Compile-Fix `f7c5989`) →
+  `2026-09-16-sdkcompat-aktivierung-und-zustandsfixes.md`
+- **Erststart-Onboarding** (`43079ce`) → `2026-09-27-onboarding.md`
+- **Outfit-Varianten** (`e9958f9`) → `2026-09-27-outfit-varianten.md`
+- **Review-Fixes** (13.11., ab `522501e`): SDK-Interna-Typ per Name statt `typeof`,
+  Aufklapp-Zustand überlebt den Listen-Neuaufbau, „rig"-Fehlererkennung nur
+  noch als ganzes Wort, Doku nachgezogen → `2026-11-13-review-fixes.md`
 
-## Veröffentlichung v3.2.0
+Nutzersicht dazu: `CHANGELOG.md`, Abschnitt `[Unreleased]`.
 
-Die vorbereitete Änderung wurde am 23. August 2026 veröffentlicht:
+## Prüfstand
 
-- Feature-Commit `c1adec8` trennt Quellcode und öffentliche Dokumentation.
-- Projektgedächtnis-Commit `79ae6b0` enthält Arbeitsregeln, Status und
-  Migrationsübergaben.
-- Annotierter Git-Tag `3.2.0` zeigt auf `79ae6b0`.
-- GitHub-Release: `v3.2.0 — Selected-item VRAM optimization`.
-- Release-Asset: `VRChat-outfit-batch-uploader-3.2.0.unitypackage`, 113351
-  Bytes, SHA-256
-  `2AA0E1969CD8546341CC9CE597212C42F06F552FAB58B9854C7C25D51E59281E`.
+| Stand | In Unity kompiliert | Im Editor benutzt |
+| --- | --- | --- |
+| v3.3.0 | ja (Exitcode 0) | ja, drei Sichtprüfungen per Video |
+| Paket von `2e74c29` | **nein** — `SdkCompat.cs` CS0246 | — |
+| `f7c5989` | laut Nutzer ja („Fehler scheint weg"), Editor.log nicht geprüft | nein |
+| Onboarding, Varianten, Review-Fixes | **nein** | **nein** |
 
-Das Unitypackage folgt dem historischen v3.1.0-Importlayout unter dem weiterhin
-veralteten doppelten Ordnerpfad und enthält Plugin-Code, Wiki, Lizenz sowie die
-v3.2-Release Notes. Interne Codex-Dateien und projektspezifischer Zustand sind
-nicht enthalten.
+Wichtig: Der 34-Outfit-Batch vom 26.09. (33/34 OK) lief auf dem **alten**
+geladenen Code, weil der Compile des Testpakets fehlgeschlagen war. Er belegt
+nichts über den unveröffentlichten Stand.
 
-## Unveröffentlichter Stabilitätsstand nach v3.2.0
+## Vor dem nächsten Release
 
-Nach einem vollständigen Review aller Editor-C#-Dateien wurde am 23. August
-2026 ein noch nicht committeter Stabilitäts-Pass umgesetzt:
+1. Aktuelles Testpaket importieren, Console auf Compilerfehler prüfen.
+2. Sichtprüfung: Onboarding-Karte (über **?**), dabei auf die Höhe achten —
+   Kopf, Karte und Batch-Fußzeile lassen der Outfitliste bei normaler
+   Fensterhöhe möglicherweise wenig Platz. Varianten anlegen, Items ändern,
+   **Select** zwischen Outfit und Variante wechseln.
+3. Batch auf dem neuen Code wiederholen; Variante per Express hochladen.
+4. Avatare in VRChat prüfen (vom Nutzer angekündigt).
+5. Erst dann, auf ausdrücklichen Auftrag: Versionsnummer (README-Kopfzeile
+   steht noch auf v3.3), `[Unreleased]` im Changelog abschließen, Paket, Tag,
+   Release, Wiki-Abgleich.
 
-- Beim Outfitwechsel werden alle vom Tool verwalteten Blendshapes zunächst auf
-  null gesetzt, bevor die Ziel-Overrides angewendet werden.
-- Ein Avatarwechsel kann keinen Skin-Renderer des vorherigen Avatars mehr
-  behalten.
-- Contact-/Light-Budgets werden unabhängig vom momentan aktiven Outfit in
-  Outfit- und Item-Buckets erfasst; nur wirklich untergeordnete
-  `EditorOnly`-Teilbäume werden ausgeschlossen. Rein gebackene Lights zählen
-  nicht mehr als Laufzeit-Light.
-- Abgelehnte Unity-Plattformwechsel brechen kontrolliert ab.
-- Verschwundene Outfits werden im Batch als fehlgeschlagen statt erfolgreich
-  gezählt; Session-Queue-Daten werden nach Abschluss/Abbruch bereinigt.
-- Item-Änderungen invalidieren Budget/VRAM sofort; All/None speichert gebündelt.
-- Projekt- und Versions-JSON werden atomar mit `.tmp`/`.bak` geschrieben und
-  können bei beschädigter Hauptdatei aus dem Backup wiederhergestellt werden.
-- Express speichert seinen Resume-Datensatz vor möglichen Domain Reloads und
-  erzeugt das Thumbnail vor dem Leeren der Blueprint-ID.
-- Nur tatsächlich vom Tool erzeugte `shiro_thumb_*.png`-Dateien werden als
-  temporäre Thumbnails gelöscht.
-- Texture-Optimierung räumt den Progressbar auch bei Fehlern auf und meldet
-  fehlgeschlagene VRAM-Schätzungen.
-- Die gesamte aufgeklappte Seite `New Outfit Defaults` besitzt einen eigenen,
-  an die Fensterhöhe angepassten Scrollbereich; ihre verschachtelten Listen
-  behalten die bestehende Scroll-Routenlogik.
+## Offene Entscheidung
 
-Die sechs geänderten Plugin-Dateien wurden gezielt in das freigegebene
-Unity-Testziel synchronisiert. Ein isolierter Compile der vollständigen
-`Assembly-CSharp-Editor` mit Unity 2022.3.22f1 und der vorhandenen
-Bee-Response-Datei endete mit Exitcode 0. Zwei CS8032-Warnungen betrafen nur die
-außerhalb von Bee gestarteten Unity-Source-Generatoren; der Plugin-Code hatte
-keine Compilerfehler. Unitys laufender Editor hatte Auto-Refresh während der
-Prüfung nicht ausgeführt.
+**Select ohne Blueprint-ID lässt die vorherige ID auf dem PipelineManager.**
+`ActivateOutfit` setzt die ID nur, wenn der Zieleintrag eine hat. Wer danach im
+VRChat-SDK-Fenster selbst hochlädt, überschreibt den zuvor aktiven Avatar. Die
+Buttons des Tools sind sicher (Upload ohne ID gesperrt, Express leert die ID).
+Vorschlag: ID in diesem Fall leeren. Wartet auf die Antwort des Nutzers.
 
-## Nächste Schritte
+## Bekannte offene Punkte
 
-1. Bei der nächsten funktionalen Änderung den synchronisierten Pluginstand im
-   Unity-Testziel kompilieren und einen passenden Editor-Workflow prüfen.
-2. Die wichtigsten Zustandswechsel (Outfit/Blendshape, Avatarwechsel,
-   per-Outfit-Budgets und Express-Resume) bei Gelegenheit manuell im Editor
-   regressionsprüfen.
-3. Prüfen, wie Git-Arbeitskopie und Unity-Testziel künftig teilautomatisiert,
-   aber ohne pauschales Spiegeln synchronisiert werden sollen.
-4. Vor dem nächsten Release Dokumentation und Versionsangaben abgleichen.
+- Kein `.asmdef`, keine Tests, keine CI — siehe Abschnitt Umgebung.
+- Identität über Namen: Umbenennen eines Outfits verliert seine Einstellungen
+  und versteckt seine Varianten (Dry Run warnt). Varianten sind nicht
+  umbenennbar, nur entfernen und neu anlegen.
+- `OutfitBatchUploader.cs` (rund 2150 Zeilen) mischt GUI, Batch-Ablauf und
+  Scroll-Animation.
+- Die Schleife des Upload-All-Gates ist nicht gegen einen Domain Reload
+  zwischen zwei Express-Setups gesichert.
+- ↺ (`ScanScene`) klappt weiterhin alle Zeilen zu; nur `RebuildOutfitList`
+  erhält den Aufklapp-Zustand.
+- Kleineres: `FlushScene` speichert die Szene bei jedem Upload,
+  Versionsstempel-Regex, keine Dauer-Schätzung im Dry Run.
 
-## Unveröffentlichte UI-Neustrukturierung
+## Paketbau
 
-Am 23. August 2026 wurde als erster Schritt gegen die zunehmende Dichte des
-Hauptfensters die bisherige lange Einzelseite in drei Arbeitsbereiche geteilt:
+Es liegt kein Build-Skript im Repository. Ein `.unitypackage` ist ein
+gzip-Tar mit je Asset einem Ordner `<GUID>/` (GUID aus der `.meta`), darin
+`asset` (fehlt bei Ordnern), `asset.meta` und `pathname` (Zielpfad ohne
+Zeilenumbruch am Ende). Zielpfad ist das historische Doppelordner-Layout
+`Assets/VRChat-outfit-batch-uploader-3.0.0/VRChat-outfit-batch-uploader-2.0.0/…`,
+damit ein Import bestehende Installationen über die GUIDs an Ort und Stelle
+aktualisiert. Enthalten: `Editor/` samt `Sounds/`, `Wiki/`, `LICENSE`,
+`README.md`, `CHANGELOG.md` (34 Assets). Nicht enthalten: `AGENTS.md`,
+`PROJECT_STATE.md`, `PROMO_KIT.md`, `project-memory/` und jeder
+projektspezifische Zustand.
 
-- `Outfits` zeigt die vollständige Outfitliste.
-- `New Outfit` filtert auf Outfits ohne Blueprint-ID und erklärt den
-  Express-/Advanced-Erstupload.
-- `Defaults` zeigt die komplette Konfiguration für neue Outfits in einer
-  eigenen, die verfügbare Fensterhöhe nutzenden Scrollansicht.
+## Handoffs
 
-Der Batch-Upload bleibt in den beiden outfitbezogenen Ansichten als feste
-Fußsektion unter der flexibel scrollenden Liste sichtbar. Uploadlogik und
-persistiertes Projektdatenformat wurden dabei nicht verändert.
-
-Nach Sichtprüfung der neuen Navigation per Unity-Video wurden außerdem die
-Outfitkarten verdichtet. Im geschlossenen Zustand zeigen sie nur noch Name,
-Aktivstatus, Batch-Auswahl, Zielplattformen, Primäraktionen und die zentrale
-Performance-Zusammenfassung. Blueprint-ID, VRAM-/Thumbnail-Aktionen,
-Plattformbearbeitung, Uploadhistorie, Blendshapes, Items und FaceEmo liegen in
-einer aufklappbaren Detailansicht. Outfits ohne Blueprint-ID behalten ihre
-Express-/Advanced-Erstupload-Aktionen auch im kompakten Zustand.
-
-Eine weitere Video-Sichtprüfung bestätigte stabile Kopfzeilen und die deutlich
-höhere Informationsdichte. Um die dadurch entstandene durchgehend rote
-Warnfläche zu entschärfen, werden reine `Very Poor`-Performancebewertungen für
-Contacts, Lights und VRAM nun gedämpft orange dargestellt. Rot bleibt harten
-Limits beziehungsweise echten Blockern vorbehalten.
-
-`Editor/OutfitBatchUploader.cs` und `Editor/OutfitNewSetup.cs` wurden gezielt
-in den freigegebenen Pluginordner auf `D:` synchronisiert. Der isolierte
-Compile der vollständigen `Assembly-CSharp-Editor` mit Unity 2022.3.22f1 und
-der vorhandenen Bee-Response-Datei endete mit Exitcode 0. Die zwei bekannten
-CS8032-Warnungen betreffen nur die außerhalb von Bee gestarteten Unity-
-Source-Generatoren.
-
-## Release v3.3.0 vorbereitet
-
-Der UI- und Backend-Stabilitätsstand wurde als öffentlicher Source-/Docs-Commit
-`3c28eb7` (`feat: optimize plugin UI and backend stability`) zusammengeführt.
-README und Wiki beschreiben die drei Arbeitsbereiche, kompakten Outfitkarten,
-die feste Batch-Fußsektion und die Backend-Sicherheitsverbesserungen. Eine neue
-Wiki-Seite `User-Interface.md` und englische `RELEASE_NOTES_v3.3.md` wurden
-ergänzt.
-
-Das Release-Asset
-`VRChat-outfit-batch-uploader-3.3.0.unitypackage` wurde im historischen
-kompatiblen Doppelordner-Layout gebaut und vollständig entpackt geprüft:
-
-- 33 Unity-Assets mit vorhandenen `.meta`-GUIDs,
-- 127687 Bytes,
-- SHA-256 `3CF8A1D07E4A9354965E671FAE3FA8D34F3DB4238733C5842E4B571B720A323E`,
-- enthält Editor-Code, Sounds, README, Wiki, Lizenz und Release Notes,
-- enthält kein Projektgedächtnis, keine Arbeitsregeln und keine
-  avatarspezifischen `ProjectSettings` oder Upload-Logs.
-
-Der vollständige Editor-Code wurde vor der Veröffentlichung mit der realen
-Unity-2022.3.22f1-/VRChat-SDK-Assemblykonfiguration kompiliert (Exitcode 0).
-Die Oberfläche wurde zusätzlich in drei aufeinanderfolgenden Unity-Videos
-visuell geprüft und iterativ verdichtet.
-
-## Veröffentlichung v3.3.0
-
-v3.3.0 wurde am 23. August 2026 veröffentlicht:
-
-- Source-/Docs-Commit `3c28eb7`,
-- Projektgedächtnis-/Release-Commit `5aca50e`,
-- annotierter Tag `3.3.0` auf `5aca50e`,
-- GitHub-Release: `v3.3.0 — UI & Backend Optimization Update`,
-- URL: `https://github.com/TheSilentD3ath/VRChat-outfit-batch-uploader/releases/tag/3.3.0`,
-- Release ist öffentlich, kein Draft und kein Prerelease,
-- Assetgröße und GitHub-Digest stimmen mit dem lokal geprüften Paket überein.
-- Das separate GitHub-Wiki wurde mit Commit `ca3659c` aktualisiert; sieben
-  bestehende Seiten wurden gezielt angepasst und `User-Interface.md` ergänzt.
-
-## Stand nach v3.3.0 (unveröffentlicht)
-
-Nach dem Release v3.3.0 sind zwei weitere Arbeitsstände entstanden:
-
-- `7ef418d` korrigiert den veralteten `.gitignore`-Kommentar zur Ablage der
-  Einstellungen.
-- `54a0bb6` legt `CHANGELOG.md` an und fügt `Editor/SdkCompat.cs` hinzu.
-
-Ein Review am 16. September 2026 hat zwei Mängel dieses letzten Commits
-festgestellt und behoben: `SdkCompat` hatte keinen einzigen Aufrufer, und die
-`RELEASE_NOTES_v3.*`-Dateien waren samt `.meta` auf 0 Byte geleert statt
-gelöscht. Der aktuelle Arbeitsstand auf `claude/youthful-gates-udtpmv` enthält
-daher:
-
-- die tatsächliche Entfernung der acht 0-Byte-Dateien,
-- die Aktivierung aller vier `SdkCompat`-Pfade einschließlich einer
-  signatur- und überladungsfesten `FindMethod`,
-- `ResetPerAvatarUiStateIfAvatarChanged()`, das beim Avatarwechsel die
-  namensbasierten Caches und insbesondere die Express-/Advanced-Entwürfe
-  verwirft,
-- eine korrigierte Abbruchsteuerung des Batches über `OnDestroy` statt
-  `OnDisable`,
-- `DelayedTextField` für Blueprint-ID, Base Version, Outfits-Parent und
-  Items-Parent, sodass kein JSON-Write und kein Listen-Rebuild mehr pro
-  getipptem Zeichen läuft,
-- `Material.GetTexturePropertyNames()` statt der langsamen
-  `ShaderUtil`-Iteration im Texture-Optimizer,
-- `DisposeStyles()` gegen den Texture-Leak des Zeilenhintergrunds,
-- den SessionState-Key `Shiro_Express_Quiet`, damit der Quiet-Modus des
-  Upload-All-Gates einen Domain Reload überlebt,
-- einen Dry-Run-Check auf doppelte Avatarnamen in der Szene,
-- `Editor/AvatarVersionManager.cs` als eigene Datei (vorher am Ende von
-  `OutfitBatchUploader.cs`, das dadurch von 2182 auf 2062 Zeilen schrumpft),
-- eine nachgeführte `ARCHITECTURE_MAP.md`, die `SdkCompat.cs` bisher nicht
-  kannte,
-- den angeglichenen VRAM-Umfang: Budgetzeile und Dialog schlüsseln Body,
-  Outfit und Items auf, und der neue Schalter `ShiroNewOutfit_OptBody`
-  (Standard aus) nimmt Body-Texturen optional in die Optimierung auf. Ein Plan
-  mit Body-Texturen wird immer bestätigt, auch bei „don't ask again".
-
-Einzelheiten, Verhaltensänderungen und offene Punkte stehen in
-`project-memory/handoffs/2026-09-16-sdkcompat-aktivierung-und-zustandsfixes.md`.
-
-**Stand 27.09.2026:** Mit dem Fix `f7c5989` kompiliert der Stand laut Nutzer
-fehlerfrei (Rückmeldung „Fehler scheint weg zu sein"; Editor.log dazu noch
-nicht geprüft, Batch-Nachtest auf neuem Code offen). Danach kam das
-Erststart-Onboarding hinzu (`Editor/OutfitOnboarding.cs`, Handoff
-`project-memory/handoffs/2026-09-27-onboarding.md`), ebenfalls nur statisch
-geprüft. Ebenso neu: Outfit-Varianten (`Editor/OutfitVariants.cs`, Handoff
-`project-memory/handoffs/2026-09-27-outfit-varianten.md`). Eine Variante erbt
-Blendshapes, FaceEmo und Plattformen vom Basis-Outfit; eigen sind Name, Items
-und Blueprint-ID. Auch das ist nur statisch geprüft.
-
-**Erster Unity-Test (26.09.2026) ist fehlgeschlagen, Fix liegt vor.** Das Testpaket von `2e74c29` kompilierte nicht: `SdkCompat.cs(69,39)`
-CS0246, `VRCCopyrightAgreement` nicht gefunden — der Datei fehlten die
-VRC-`using`s, mit denen der Code vorher in `OutfitBatchUploader.cs` kompiliert
-hatte. `SdkCompat.cs` war vor diesem Paket nie in Unity kompiliert worden. Weil
-der Compile fehlschlug, lief der anschließende 34-Outfit-Batch (33/34 OK) noch
-auf dem **alten** geladenen Code und belegt nichts über diesen Stand. Der Fix
-übernimmt die vorher bewährte VRC-Importmenge. Vor einer Veröffentlichung muss
-der korrigierte Stand erneut im freigegebenen Pluginordner auf `D:`
-kompiliert und der Batch wiederholt werden.
+- `2026-08-23-claude-migration.md` — Übernahme aus Claude Cowork
+- `2026-08-23-item-vram-git-vorbereitung.md` — Item-VRAM, Release v3.2.0
+- `2026-08-23-stabilitaetsreview.md` — Stabilitäts-Pass nach v3.2.0
+- `2026-08-23-ui-neustrukturierung.md` — drei Arbeitsbereiche, kompakte Karten
+- `2026-08-23-release-v3.3.0.md` — Release v3.3.0
+- `2026-09-16-sdkcompat-aktivierung-und-zustandsfixes.md`
+- `2026-09-27-onboarding.md`
+- `2026-09-27-outfit-varianten.md`
+- `2026-11-13-review-fixes.md`

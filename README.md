@@ -20,6 +20,8 @@ A Unity Editor tool for VRChat avatar creators who manage multiple outfits under
 - **New Outfit Setup (Express / Advanced):** Turns the tedious first-time setup of a new outfit into one click — clears the blueprint, creates & uploads a brand-new avatar, applies your default name/description/tags/thumbnail/release, and writes the new Blueprint ID back automatically.
 - **Guided "Upload All":** Selecting a mix of ready and not-yet-set-up outfits and pressing Upload walks you through setting up the new ones (Express all, or per-outfit Express / Skip / Configure) before batching the rest.
 - **Per-outfit Items (accessories):** Pick, per outfit, which accessory objects upload with it.
+- **Outfit variants:** Upload the same outfit several times with different accessories. Each variant is its own avatar with its own Blueprint ID and shares blendshapes, FaceEmo and platforms with its outfit.
+- **First-run guide:** People who have never used the tool get a four-step card that ticks itself off as they set up, and can create the empty Outfits / Items objects with one click.
 - **Per-outfit FaceEmo:** Make [FaceEmo](https://suzuryg.github.io/face-emo/) face-expression menus per outfit via capture + tag-swap.
 - **Texture / VRAM optimizer:** One-click texture compression + resolution capping using Thry's recommendations, optionally including the items selected for that outfit.
 - **Live budget counters:** Per outfit, see Contacts (rank + 256 cap), realtime Lights, and expression Parameters (VRCFury-aware).
@@ -80,6 +82,15 @@ Each outfit row has its own **Items** foldout listing every accessory with an "i
 
 Set the items parent name and the per-name **"included on every outfit by default"** toggles in **Defaults → Items (accessories)**. Each outfit starts from those defaults and you can override per outfit.
 
+### Variants (one outfit, several item sets)
+
+To have the same outfit on VRChat more than once — *Black Dress* plain and *Black Dress* with a bag — make a **variant** instead of duplicating the outfit object:
+
+1. Open the outfit's details, type a name next to **New variant** (e.g. `With Bag`) and press **Add Variant**. It appears indented under the outfit as `↳ With Bag`, starting from the outfit's current item selection.
+2. Change its items, then upload it as a new avatar with **Express**. On VRChat it is named `Black Dress – With Bag`.
+
+A variant has its **own** name, item selection, Blueprint ID, batch tick and upload history. It **shares** blendshapes, FaceEmo and build platforms with its outfit — change those on the outfit and every variant follows. **Remove Variant** forgets it in the tool; the avatar on VRChat is not deleted. Variants are attached to the outfit's name: renaming the outfit object hides them until it is renamed back (the dry run warns about this).
+
 ### Budget counters (per outfit)
 
 Each outfit row shows a live one-line budget for what uploads with that outfit (its own components + its included items + shared body, ignoring `EditorOnly` and other outfits):
@@ -121,6 +132,8 @@ The tool references no third-party types directly, so it compiles and runs witho
 The tool works in any VRChat avatar project that has the Avatar SDK installed, regardless of the folder name you install it under.
 
 ## Setup
+
+The first time the tool is opened on a computer — and only if it has never been used there before — a short guide in the window walks through these steps and ticks each one off as you do it. Skip it at any time; the **?** at the top right brings it back.
 
 1. **Avatar root** — drag your avatar's root GameObject into the field (auto-detected if only one avatar is in the scene)
 2. **Avatar skin** — the SkinnedMeshRenderer with blendshapes (auto-detected)
