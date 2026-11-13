@@ -356,6 +356,17 @@ namespace ShiroTools
         /// </summary>
         private void RebuildOutfitList()
         {
+            // The rows are recreated below. Remember what was open — same avatar only, outfit
+            // names repeat across avatars — or adding a variant (and every hierarchy change while
+            // the onboarding card is up) collapses the very row someone is working in.
+            Dictionary<string, OutfitEntry> previousRows = null;
+            if (_uiStateAvatar == _avatarRoot && _outfits.Count > 0)
+            {
+                previousRows = new Dictionary<string, OutfitEntry>();
+                foreach (var o in _outfits)
+                    if (o != null && o.Name != null) previousRows[o.Name] = o;
+            }
+
             ResetPerAvatarUiStateIfAvatarChanged();
 
             _outfitsParent = null;
@@ -386,13 +397,14 @@ namespace ShiroTools
                     BuildIOS       = data.buildIOS
                 };
                 LoadBlendShapes(entry);
+                KeepRowUiState(previousRows, entry);
                 _outfits.Add(entry);
 
                 // Variants: same outfit object, own name / items / Blueprint ID. Blendshapes are
                 // the base's own dictionary instance, so edits on the base apply to them at once.
                 foreach (var vd in OutfitProjectData.GetVariants(avatarKey, entry.Name))
                 {
-                    _outfits.Add(new OutfitEntry
+                    var variant = new OutfitEntry
                     {
                         Go             = entry.Go,
                         Name           = vd.name,
@@ -405,9 +417,24 @@ namespace ShiroTools
                         BuildAndroid   = entry.BuildAndroid,
                         BuildIOS       = entry.BuildIOS,
                         BlendShapes    = entry.BlendShapes
-                    });
+                    };
+                    KeepRowUiState(previousRows, variant);
+                    _outfits.Add(variant);
                 }
             }
+        }
+
+        /// <summary>Carries the fold-out / search / scroll state of a row over to its rebuilt
+        /// entry (matched by outfit name). No-op for a row that did not exist before.</summary>
+        private static void KeepRowUiState(Dictionary<string, OutfitEntry> previousRows, OutfitEntry entry)
+        {
+            if (previousRows == null || entry.Name == null) return;
+            if (!previousRows.TryGetValue(entry.Name, out var old)) return;
+
+            entry.DetailsExpanded    = old.DetailsExpanded;
+            entry.BlendShapeExpanded = old.BlendShapeExpanded;
+            entry.BlendShapeSearch   = old.BlendShapeSearch;
+            entry.BlendShapeScroll   = old.BlendShapeScroll;
         }
 
         private static Transform FindDeepChild(Transform parent, string name)
