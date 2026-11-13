@@ -9,8 +9,9 @@ Der Nutzer bat um eine frische Einschätzung des Projekts. Gelesen wurden rund
 zwei Drittel des Editor-Codes vollständig (Hauptfenster, Datenspeicher,
 Onboarding, Varianten, Items, Upload-All-Gate, SdkCompat, Dry Run,
 Express-Ablauf). Aus sechs Befunden hat der Nutzer vier zur Umsetzung
-freigegeben; einer ist eine reine Sichtprüfung, einer wartet auf seine
-Entscheidung.
+freigegeben; einer ist eine reine Sichtprüfung. Den sechsten (Punkt 5 unten)
+hat er nach einer zweiten Erklärung als Bug bestätigt und ebenfalls
+freigegeben, zusammen mit dem Build-Skript fürs Repository.
 
 ## Umgesetzt
 
@@ -63,11 +64,56 @@ sind unverändert.
 - `PROJECT_STATE.md`: von 260 Zeilen Chronik auf den aktuellen Stand gekürzt,
   mit Verweis auf die Handoffs. Die alte Fassung: `git show e9958f9:PROJECT_STATE.md`.
 
+### 5. Select ohne Blueprint-ID leert die ID am Avatar (`Editor/OutfitBatchUploader.cs`)
+
+Vom Nutzer als Bug bestätigt und freigegeben. `ActivateOutfit` setzte die ID
+am `PipelineManager` nur, wenn der Zieleintrag eine hatte. Bei einem Eintrag
+ohne ID blieb die des zuvor aktiven Outfits stehen; ein Upload aus dem
+VRChat-SDK-Fenster überschrieb dann diesen anderen Avatar. Mit Varianten ist
+der Weg dorthin kurz: Variante anlegen, „Select" zum Ansehen, gewohnter
+SDK-Button.
+
+Neu: Die ID am Avatar folgt immer dem aktiven Eintrag — seine ID, sonst leer.
+Die Änderung liegt in derselben Undo-Gruppe wie der Outfitwechsel.
+
+Drei Folgen, die mitbehandelt sind:
+
+- **Base Version.** Die Zeile und `LoadAvatarVersion` hängen an der ID am
+  Avatar. Ohne Ausgleich wäre die Zeile verschwunden, der nächste Rescan (↺,
+  Szenenwechsel, Domain Reload) hätte die Version geleert und der folgende
+  Batch keine mehr gestempelt. `GetMainBlueprintId()` weicht deshalb bei
+  leerer ID auf das erste Outfit mit gültiger ID aus. Das verbessert nebenbei
+  den schon vorher möglichen Fall „Rescan während Express".
+- **Unbekannte ID.** Steht am Avatar eine ID, die kein Outfit im Tool
+  verwendet (zum Beispiel von einem Upload vor der Tool-Nutzung), wird auch sie
+  entfernt. Abgewogen gegen „stehen lassen": Stehen lassen hieße, dass ein
+  SDK-Upload genau diesen Avatar mit dem falschen Outfit überschreibt — die
+  Fehlerklasse, um die es geht. Express hat die ID an dieser Stelle schon
+  immer kommentarlos geleert. Damit sie nicht spurlos verschwindet, schreibt
+  `ReportRemovedBlueprintId` sie in die Console und in die Statuszeile.
+- **Onboarding-Text Schritt 4** (`Editor/OutfitOnboarding.cs`) nennt jetzt
+  auch den ▾-Auswahlknopf neben dem Blueprint-ID-Feld, über den man die ID
+  eines vorhandenen Avatars ohne Abtippen zuordnet.
+
+Unverändert: Express ruft weiterhin `ClearBlueprintId()` auf (setzt zusätzlich
+`completedSDK3Setup` zurück); Batch-Ziele haben immer eine ID.
+
+### 6. Build-Skript im Repository (`tools/build-unitypackage.py`)
+
+Das Skript lag bisher nur im Sitzungs-Scratchpad und war nach einem
+Container-Neustart weg. Es ist neu geschrieben und am veröffentlichten
+v3.3.0-Asset abgeglichen: Einträge `./<GUID>/…` mit Verzeichniseinträgen,
+Modus 0777, uid/gid 0, Text mit CRLF, `pathname` ohne Zeilenumbruch. Für die
+29 Pfade, die es in beiden Paketen gibt, stimmen alle GUIDs überein. `tools/`
+ist nicht Teil des Pakets.
+
 ## Geprüft
 
-Nur statisch: Klammerbilanz der drei geänderten C#-Dateien gegen `HEAD`,
-Suche nach verbliebenen `typeof`-Referenzen auf die SDK-Klasse, Gegenlesen des
-Diffs. **Kein Unity-Compile** — in der Sitzung gibt es keinen C#-Compiler.
+Nur statisch: Klammerbilanz der geänderten C#-Dateien gegen `HEAD`, Suche nach
+verbliebenen `typeof`-Referenzen auf die SDK-Klasse und nach allen Lesern und
+Schreibern der ID am Avatar (es sind vier), Gegenlesen des Diffs. Das Paket
+ist gegen `HEAD` inhaltsgleich geprüft. **Kein Unity-Compile** — in der Sitzung
+gibt es keinen C#-Compiler.
 
 ## Risiken
 
@@ -83,10 +129,10 @@ Diffs. **Kein Unity-Compile** — in der Sitzung gibt es keinen C#-Compiler.
 
 ## Offen
 
-- **Entscheidung des Nutzers:** Select auf einem Eintrag ohne Blueprint-ID
-  lässt die vorherige ID auf dem PipelineManager (`ActivateOutfit`). Ein
-  manueller Upload im SDK-Fenster überschreibt dann den zuvor aktiven Avatar.
-  Vorschlag war, die ID in dem Fall zu leeren. Dem Nutzer wurde das noch
-  einmal erklärt; die Antwort steht aus.
 - **Sichtprüfung:** Höhe der Onboarding-Karte bei normaler Fensterhöhe.
+- **Test zu Punkt 5:** Select auf Variante ohne ID → Blueprint-ID im Pipeline
+  Manager leer; Select zurück → ID wieder da; „Base Version" bleibt sichtbar.
+- **Idee, nicht umgesetzt:** Trägt der Avatar eine ID, die kein Outfit
+  verwendet, könnte Onboarding-Schritt 4 anbieten, sie dem ersten Outfit
+  zuzuordnen, statt sie nur zu protokollieren.
 - Compile, Batch-Nachtest und VRChat-Test wie in `PROJECT_STATE.md`.

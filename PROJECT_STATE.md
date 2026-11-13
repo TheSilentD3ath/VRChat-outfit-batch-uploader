@@ -39,7 +39,8 @@ Seit v3.3.0, jeweils mit Handoff:
 - **Outfit-Varianten** (`e9958f9`) → `2026-09-27-outfit-varianten.md`
 - **Review-Fixes** (13.11., ab `522501e`): SDK-Interna-Typ per Name statt `typeof`,
   Aufklapp-Zustand überlebt den Listen-Neuaufbau, „rig"-Fehlererkennung nur
-  noch als ganzes Wort, Doku nachgezogen → `2026-11-13-review-fixes.md`
+  noch als ganzes Wort, Select ohne Blueprint-ID leert die ID am Avatar,
+  Build-Skript im Repo, Doku nachgezogen → `2026-11-13-review-fixes.md`
 
 Nutzersicht dazu: `CHANGELOG.md`, Abschnitt `[Unreleased]`.
 
@@ -63,21 +64,23 @@ nichts über den unveröffentlichten Stand.
    Kopf, Karte und Batch-Fußzeile lassen der Outfitliste bei normaler
    Fensterhöhe möglicherweise wenig Platz. Varianten anlegen, Items ändern,
    **Select** zwischen Outfit und Variante wechseln.
-3. Batch auf dem neuen Code wiederholen; Variante per Express hochladen.
-4. Avatare in VRChat prüfen (vom Nutzer angekündigt).
-5. Erst dann, auf ausdrücklichen Auftrag: Versionsnummer (README-Kopfzeile
+3. Blueprint-ID am Avatar: **Select** auf eine Variante ohne ID → das Feld
+   „Blueprint ID" im Pipeline Manager ist leer; **Select** zurück auf das
+   Outfit → seine ID steht wieder drin. Die Zeile „Base Version" bleibt dabei
+   sichtbar und behält ihren Wert.
+4. Batch auf dem neuen Code wiederholen (es darf weiterhin nur **eine**
+   Eigentumsabfrage kommen); Variante per Express hochladen.
+5. Avatare in VRChat prüfen (vom Nutzer angekündigt).
+6. Erst dann, auf ausdrücklichen Auftrag: Versionsnummer (README-Kopfzeile
    steht noch auf v3.3), `[Unreleased]` im Changelog abschließen, Paket, Tag,
    Release, Wiki-Abgleich.
 
-## Offene Entscheidung
-
-**Select ohne Blueprint-ID lässt die vorherige ID auf dem PipelineManager.**
-`ActivateOutfit` setzt die ID nur, wenn der Zieleintrag eine hat. Wer danach im
-VRChat-SDK-Fenster selbst hochlädt, überschreibt den zuvor aktiven Avatar. Die
-Buttons des Tools sind sicher (Upload ohne ID gesperrt, Express leert die ID).
-Vorschlag: ID in diesem Fall leeren. Wartet auf die Antwort des Nutzers.
-
 ## Bekannte offene Punkte
+
+- **Select** auf einen Eintrag ohne Blueprint-ID nimmt jede ID vom Avatar,
+  auch eine, die das Tool keinem Outfit zuordnen kann (etwa von einem Upload
+  vor der Tool-Nutzung). Die wird in die Console geschrieben und ist per
+  Strg+Z oder über ▾ wieder holbar, steht danach aber nicht mehr im Inspector.
 
 - Kein `.asmdef`, keine Tests, keine CI — siehe Abschnitt Umgebung.
 - Identität über Namen: Umbenennen eines Outfits verliert seine Einstellungen
@@ -94,7 +97,10 @@ Vorschlag: ID in diesem Fall leeren. Wartet auf die Antwort des Nutzers.
 
 ## Paketbau
 
-Es liegt kein Build-Skript im Repository. Ein `.unitypackage` ist ein
+`python3 tools/build-unitypackage.py <ziel.unitypackage>` baut das Paket aus
+einem sauberen Arbeitsbaum (braucht nur Python 3 und git) und gibt Assetzahl,
+Größe und SHA-256 aus. Derselbe Commit ergibt bei gleicher Python-/zlib-Version
+dieselben Bytes. Das Format ist am veröffentlichten v3.3.0-Asset abgeglichen. Ein `.unitypackage` ist ein
 gzip-Tar mit je Asset einem Ordner `<GUID>/` (GUID aus der `.meta`), darin
 `asset` (fehlt bei Ordnern), `asset.meta` und `pathname` (Zielpfad ohne
 Zeilenumbruch am Ende). Zielpfad ist das historische Doppelordner-Layout
@@ -102,7 +108,7 @@ Zeilenumbruch am Ende). Zielpfad ist das historische Doppelordner-Layout
 damit ein Import bestehende Installationen über die GUIDs an Ort und Stelle
 aktualisiert. Enthalten: `Editor/` samt `Sounds/`, `Wiki/`, `LICENSE`,
 `README.md`, `CHANGELOG.md` (34 Assets). Nicht enthalten: `AGENTS.md`,
-`PROJECT_STATE.md`, `PROMO_KIT.md`, `project-memory/` und jeder
+`PROJECT_STATE.md`, `PROMO_KIT.md`, `project-memory/`, `tools/` und jeder
 projektspezifische Zustand.
 
 ## Handoffs
