@@ -9,7 +9,9 @@ abrufbar.
 
 ## Umgebung
 
-- Unity 2022.x (kompiliert zuletzt mit 2022.3.22f1) mit VRChat Avatars SDK.
+- Unity 2022.3.22f1 mit VRChat SDK Base und Avatars **3.10.6** (Stand des
+  Nutzerprojekts am 13.11.2026, laut Creator Companion). Was das Tool vom SDK
+  benutzt, steht in `project-memory/SDK_NOTES.md`.
 - Freigegebenes Unity-Testziel: der Pluginordner im Projekt `Main avi` auf `D:`
   (genauer Pfad und Regeln in `AGENTS.md`). Der innere Ordnername `…-2.0.0`
   ist ein falscher Altname und sagt nichts über die Version.
@@ -51,7 +53,7 @@ Nutzersicht dazu: `CHANGELOG.md`, Abschnitt `[Unreleased]`.
 | v3.3.0 | ja (Exitcode 0) | ja, drei Sichtprüfungen per Video |
 | Paket von `2e74c29` | **nein** — `SdkCompat.cs` CS0246 | — |
 | `f7c5989` | laut Nutzer ja („Fehler scheint weg"), Editor.log nicht geprüft | nein |
-| Onboarding, Varianten, Review-Fixes | **nein** | **nein** |
+| Testpaket `a9d3ce4` (Onboarding, Varianten, alle Review-Fixes inkl. Select-Fix) | laut Nutzer ja: „läuft" auf SDK 3.10.6 / Unity 2022.3.22f1 (13.11., Editor.log nicht geprüft) | läuft; welche Funktionen ausprobiert wurden, ist noch offen |
 
 Wichtig: Der 34-Outfit-Batch vom 26.09. (33/34 OK) lief auf dem **alten**
 geladenen Code, weil der Compile des Testpakets fehlgeschlagen war. Er belegt
@@ -80,7 +82,12 @@ nichts über den unveröffentlichten Stand.
 - **Select** auf einen Eintrag ohne Blueprint-ID nimmt jede ID vom Avatar,
   auch eine, die das Tool keinem Outfit zuordnen kann (etwa von einem Upload
   vor der Tool-Nutzung). Die wird in die Console geschrieben und ist per
-  Strg+Z oder über ▾ wieder holbar, steht danach aber nicht mehr im Inspector.
+  Strg+Z wieder holbar, steht danach aber nicht mehr im Inspector.
+- **„☁ IDs" und der ▾-Auswahlknopf können nicht funktionieren:** Sie rufen
+  `VRCApi.GetAvatars` auf, das es in keinem SDK von 3.3.0 bis 3.10.6 gibt
+  (Einzelheiten und zwei Reparaturwege in `SDK_NOTES.md`). Onboarding-Schritt 4
+  verweist seit dem 13.11. auf ▾; das ist bis zur Reparatur falsch. Reparatur
+  dem Nutzer angeboten, Antwort offen.
 
 - Kein `.asmdef`, keine Tests, keine CI — siehe Abschnitt Umgebung.
 - Identität über Namen: Umbenennen eines Outfits verliert seine Einstellungen

@@ -63,8 +63,10 @@ Namespace `VRC.SDKBase`, nicht in `VRC.Core` oder `…Editor.Api`.
   Finish/Success/Error`, `OnSdkUploadStart/Progress/Finish/Success/Error` sowie
   `BuildState`, `UploadState`, `CancelUpload()`.
 
-**Folgerung Mindestversion:** `com.vrchat.avatars >= 3.8.0`. Getestet ist nur
-die Version des Nutzers (noch offen, welche).
+**Folgerung Mindestversion:** `com.vrchat.avatars >= 3.8.0`. Wirklich
+ausgeführt ist das Tool nur auf der Version des Nutzers: **3.10.6** mit Unity
+2022.3.22f1 (Testpaket `a9d3ce4` läuft dort laut Nutzer, 13.11.). Das ist
+dieselbe Version, aus der die Angaben in dieser Datei stammen.
 
 ## Befund: `VRCApi.GetAvatars` gibt es nicht
 
