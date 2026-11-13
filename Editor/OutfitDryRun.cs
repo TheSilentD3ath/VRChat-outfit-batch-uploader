@@ -55,6 +55,17 @@ namespace ShiroTools
             catch { /* logging must never break an upload */ }
         }
 
+        /// <summary>The "Log" button: opens the upload log in the system's default text editor.</summary>
+        private void OpenUploadLog()
+        {
+            if (!File.Exists(UPLOAD_LOG_PATH))
+            {
+                SetStatus("No upload log yet — it is created with the first upload.", MessageType.Info);
+                return;
+            }
+            EditorUtility.OpenWithDefaultApp(Path.GetFullPath(UPLOAD_LOG_PATH));
+        }
+
         // ============================================================
         //  Dry run
         // ============================================================

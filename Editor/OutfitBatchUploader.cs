@@ -135,6 +135,7 @@ namespace ShiroTools
         private static readonly GUIContent GC_PICK  = new GUIContent("▾", "Pick from your VRChat avatars");
         private static readonly GUIContent GC_CLOUD = new GUIContent("☁ IDs", "Fetch your avatars from VRChat and auto-match Blueprint IDs to outfits by name");
         private static readonly GUIContent GC_DRYRUN = new GUIContent("Dry run", "Checks everything the batch would check (IDs, platforms, budgets, …) without uploading anything.");
+        private static readonly GUIContent GC_LOG = new GUIContent("Log", "Open the upload log: the result of every upload and how long each step took.");
 
         // ---- Styles (lazy init) ----
         private GUIStyle _headerStyle;
@@ -206,6 +207,7 @@ namespace ShiroTools
         private void OnDestroy()
         {
             _cts?.Cancel();
+            DetachSdkTiming();   // the SDK's builder must not keep calling into a closed window
         }
 
         /// <summary>Scene structure changed → cached VRAM values and budget buckets are stale.</summary>
@@ -1072,6 +1074,8 @@ namespace ShiroTools
                     if (GUILayout.Button(GC_DRYRUN, EditorStyles.miniButton, GUILayout.Width(60)))
                         RunDryRun();
                 }
+                if (GUILayout.Button(GC_LOG, EditorStyles.miniButton, GUILayout.Width(36)))
+                    OpenUploadLog();
                 EditorGUI.BeginChangeCheck();
                 _soundEnabled = EditorGUILayout.ToggleLeft("🔔 Sound when done", _soundEnabled, GUILayout.Width(140));
                 if (EditorGUI.EndChangeCheck())
@@ -1545,6 +1549,7 @@ namespace ShiroTools
         private void StartQueuedBatch(List<QueueItem> queue, VRCPlatform currentPlatform)
         {
             SaveBlendshapeSnapshot();
+            ClearBatchTiming();   // timing sums start from zero with every batch
 
             // Save queue into Domain-Reload-proof SessionState
             SaveQueue(SESSION_BATCH_QUEUE, queue);
@@ -1613,8 +1618,12 @@ namespace ShiroTools
                         _batchSubProgress = 0.1f;
                         Repaint();
                         
+                        MarkPlatformSwitchStarted();
                         if (!SwitchPlatform(platform))
+                        {
+                            ClearPlatformSwitchMark();
                             throw new Exception($"Platform {platform} is not installed or supported.");
+                        }
                         
                         // IMPORTANT: The Platform Switch forces a Unity Domain Reload here.
                         // All code execution is about to die. We wire up a backup hook to resume just in case
@@ -1624,6 +1633,8 @@ namespace ShiroTools
                         EditorApplication.update += HandleResumeBatch;
                         return;
                     }
+
+                    RecordPlatformSwitchIfPending(platform);
 
                     SetStatus($"[{currentIndex + 1}/{total}] Activating {outfitName} ({platform})...", MessageType.Info);
                     _batchSubProgress = 0.2f;
@@ -1645,8 +1656,12 @@ namespace ShiroTools
                         continue;
                     }
 
+                    // t… = stopwatch readings for the upload log's TIME line (OutfitTiming.cs).
+                    double tStart = TimingNow();
                     ActivateOutfit(outfit);
+                    double tActivated = TimingNow();
                     FlushScene();
+                    double tSaved = TimingNow();
                     _batchSubProgress = 0.3f;
                     Repaint();
                     await Task.Delay(1500, token);
@@ -1665,7 +1680,9 @@ namespace ShiroTools
                     if (!VRCSdkControlPanel.TryGetBuilder<IVRCSdkAvatarBuilderApi>(out var builder))
                         throw new Exception("SDK Builder not available.");
                     
+                    double tFetchStart = TimingNow();
                     var avatar = await VRCApi.GetAvatar(blueprintId, cancellationToken: token);
+                    double tFetched = TimingNow();
 
                     // Stamp the version into the description if one was typed in (not blank)
                     string versionToSet = SessionState.GetString(SESSION_BATCH_VERSION, ""); // Use the version captured at batch start
@@ -1682,7 +1699,13 @@ namespace ShiroTools
                         AvatarVersionManager.SetVersion(blueprintId, versionToSet);
                     }
 
+                    // The SDK's build / upload events split this one call into its phases.
+                    AttachSdkTiming(builder);
+                    ResetSdkTiming();
+                    double tSdkStart = TimingNow();
                     await builder.BuildAndUpload(_avatarRoot, avatar, cancellationToken: token);
+                    RecordUploadTiming(outfitName, platform, tStart, tActivated, tSaved, tFetchStart, tFetched,
+                        tSdkStart, TimingNow(), queue.Count > 1 ? 2f : 0f);   // 2 s = the pause before the next upload, below
 
                     // Successful upload! Pop from queue
                     LogUpload($"OK    {outfitName} ({platform}) → {blueprintId}" +
@@ -1788,6 +1811,10 @@ namespace ShiroTools
             var finalType = failedList.Count > 0 || succeeded < total ? MessageType.Warning : MessageType.Info;
             LogUpload($"Batch finished — {succeeded}/{total} succeeded" +
                       (failedList.Count > 0 ? $", failed: {string.Join(", ", failedList.Select(f => f.outfit))}" : "") + ".");
+            // Where the time went: full table in the log and the Console, one line in the status box.
+            string timingLine = FinishBatchTiming();
+            if (!string.IsNullOrEmpty(timingLine)) summary += "\n\n" + timingLine;
+
             SessionState.SetString(SESSION_FINAL_STATUS_MSG, summary);
             SessionState.SetInt(SESSION_FINAL_STATUS_TYPE, (int)finalType);
 
@@ -1825,6 +1852,7 @@ namespace ShiroTools
         private void CancelBatch()
         {
             LogUpload("Batch cancelled.");
+            FinishBatchTiming();   // what was measured up to here still goes to the log
             SessionState.SetBool(SESSION_BATCH_ACTIVE, false);
             SessionState.EraseString(SESSION_BATCH_QUEUE);
             SessionState.EraseInt(SESSION_BATCH_TOTAL);
