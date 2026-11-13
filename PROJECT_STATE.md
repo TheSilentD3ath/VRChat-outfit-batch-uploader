@@ -58,7 +58,7 @@ Nutzersicht dazu: `CHANGELOG.md`, Abschnitt `[Unreleased]`.
 | v3.3.0 | ja (Exitcode 0) | ja, drei Sichtprüfungen per Video |
 | Paket von `2e74c29` | **nein** — `SdkCompat.cs` CS0246 | — |
 | `f7c5989` | laut Nutzer ja („Fehler scheint weg"), Editor.log nicht geprüft | nein |
-| Testpaket `a9d3ce4` (Onboarding, Varianten, alle Review-Fixes inkl. Select-Fix) | laut Nutzer ja: „läuft" auf SDK 3.10.6 / Unity 2022.3.22f1 (13.11., Editor.log nicht geprüft) | läuft; welche Funktionen ausprobiert wurden, ist noch offen |
+| Testpaket `a9d3ce4` (Onboarding, Varianten, alle Review-Fixes inkl. Select-Fix) | laut Nutzer ja: „läuft" auf SDK 3.10.6 / Unity 2022.3.22f1 (13.11., Editor.log nicht geprüft) | laut Nutzer geprüft und in Ordnung (13.11.): Onboarding-Karte samt Höhe, Variante anlegen (Outfit bleibt offen), Select auf Variante ohne ID leert die ID am Avatar, Batch mit nur einer Eigentumsabfrage. Ob mit `a9d3ce4` oder schon mit `6804917`, hat er nicht gesagt |
 
 | Avatar-Liste und Zeitmessung (nach `a9d3ce4`) | **nein** | **nein** |
 
