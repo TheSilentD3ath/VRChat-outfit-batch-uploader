@@ -142,6 +142,10 @@ namespace ShiroTools
             EnsureItemsBuilt();
             if (_itemsParent == null || _items.Count == 0) return;
 
+            DrawTip("items",
+                "Items are the accessories under your items object. Tick the ones this outfit uploads with — " +
+                "unticked items stay in the scene but are left out of this upload.");
+
             int inc = _items.Count(it => it.Go != null && ItemIncludedFor(entry.Name, it.Name));
 
             bool exp = _outfitItemsExpanded.TryGetValue(entry.Name, out var e) && e;
@@ -221,7 +225,10 @@ namespace ShiroTools
             {
                 EditorGUILayout.LabelField("Items parent", GUILayout.Width(110));
                 EditorGUI.BeginChangeCheck();
-                string newName = EditorGUILayout.TextField(_itemsParentName);
+                // Delayed, same reason as the outfits-parent field: a live field rebuilt the
+                // whole item list per keystroke, and half-typed names match nothing — the item
+                // sections vanished from every outfit while you were still typing.
+                string newName = EditorGUILayout.DelayedTextField(_itemsParentName);
                 if (EditorGUI.EndChangeCheck())
                 {
                     _itemsParentName = newName;

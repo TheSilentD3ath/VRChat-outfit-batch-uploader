@@ -4,7 +4,7 @@
 
 The compact card header keeps **Select**, **Ping**, **Upload**, batch inclusion, and the platform summary visible. Expand the card to edit the Blueprint ID and platform targets or access VRAM, thumbnail, blendshape, item, and FaceEmo tools.
 
-- **Select** — activates a single outfit in the scene (sets tags, Blueprint ID, blendshapes, items, FaceEmo) **without** uploading. Great for previewing what would be uploaded.
+- **Select** — activates a single outfit in the scene (sets tags, Blueprint ID, blendshapes, items, FaceEmo) **without** uploading. Great for previewing what would be uploaded. The avatar's Blueprint ID always follows the active entry: for an outfit or variant that has none yet, it is cleared, so an upload from the VRChat SDK window cannot overwrite another outfit's avatar. If the cleared ID is not used by any outfit in the tool, it is written to the Console, and **Ctrl+Z** undoes the Select.
 - **Upload** — activates + uploads that single outfit (only shown once it has a Blueprint ID).
 - **⚡ Express / ⚙ Advanced** — shown when the outfit has no Blueprint ID yet. See [[New Outfit Setup|New-Outfit-Setup]].
 

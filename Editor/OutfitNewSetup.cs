@@ -76,6 +76,7 @@ namespace ShiroTools
         private const string SESSION_EXPRESS_NAME    = "Shiro_Express_Name";
         private const string SESSION_EXPRESS_TAGS    = "Shiro_Express_Tags";
         private const string SESSION_EXPRESS_RELEASE = "Shiro_Express_Release";
+        private const string SESSION_EXPRESS_QUIET   = "Shiro_Express_Quiet";
 
         // ---- Runtime defaults (loaded lazily) ----
         private bool   _nsLoaded;
@@ -499,6 +500,10 @@ namespace ShiroTools
                 SessionState.SetString(SESSION_EXPRESS_NAME, name);
                 SessionState.SetString(SESSION_EXPRESS_TAGS, string.Join(";", tags));
                 SessionState.SetString(SESSION_EXPRESS_RELEASE, release);
+                // Quiet mode is a plain field, so a domain reload during the Upload-All gate
+                // resets it to false and the resumed upload plays the per-outfit confirm sound
+                // that quiet mode exists to suppress.
+                SessionState.SetBool(SESSION_EXPRESS_QUIET, _expressQuietMode);
 
                 // 4) Clear the Blueprint ID so the SDK creates a NEW avatar.
                 ClearBlueprintId();
@@ -542,6 +547,7 @@ namespace ShiroTools
             // Make sure defaults (incl. _nsAutoConsent) are loaded — after a domain reload
             // this runs BEFORE the GUI has drawn once, so they'd otherwise still be unset.
             LoadNewSetupDefaults();
+            _expressQuietMode = SessionState.GetBool(SESSION_EXPRESS_QUIET, _expressQuietMode);
 
             if (!VRCSdkControlPanel.TryGetBuilder<IVRCSdkAvatarBuilderApi>(out var builder))
             {
@@ -745,6 +751,7 @@ namespace ShiroTools
             SessionState.EraseString(SESSION_EXPRESS_NAME);
             SessionState.EraseString(SESSION_EXPRESS_TAGS);
             SessionState.EraseString(SESSION_EXPRESS_RELEASE);
+            SessionState.EraseBool(SESSION_EXPRESS_QUIET);
         }
 
         /// <summary>Called from OnEnable (in the main file) to resume a new-avatar upload

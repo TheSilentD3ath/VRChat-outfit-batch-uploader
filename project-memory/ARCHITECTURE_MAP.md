@@ -6,17 +6,39 @@
   Plattformwechsel und übergreifende UI.
 - `Editor/OutfitProjectData.cs`: projektbezogene Persistenz und Migration aus
   älteren EditorPrefs-Daten.
+- `Editor/AvatarVersionManager.cs`: Basis-Versionsnummern je Blueprint-ID in
+  `ProjectSettings/ShiroOutfit_versions.json`. Schreibt über
+  `OutfitProjectData.WriteAtomically`.
 - `Editor/OutfitNewSetup.cs`: Express-/Advanced-Erstanlage neuer Outfits.
 - `Editor/OutfitBatchSetupGate.cs`: geführte Vorbereitung neuer Outfits vor
   einem Batch.
 - `Editor/OutfitItems.cs`: outfitspezifische Auswahl von Zubehör-Objekten.
 - `Editor/OutfitFaceEmo.cs`: outfitspezifischer Capture-/Tag-Swap für FaceEmo.
+- `Editor/OutfitOnboarding.cs`: Erststart-Karte für neue Nutzer (vier Schritte,
+  die den Szenenzustand lesen und sich selbst abhaken; legt auf Wunsch die
+  leeren Outfits-/Items-Objekte an) und einmalige Kontext-Tipps (`DrawTip`).
+  Zustand je Rechner in EditorPrefs `ShiroOutfitUploader_Onboarding`.
+- `Editor/OutfitVariants.cs`: Outfit-Varianten. Eine Variante ist ein normaler
+  `OutfitData`-Datensatz mit `baseOutfit`/`variantName`, Name
+  `"<Basis> – <Variante>"`, und ein `OutfitEntry` mit demselben `Go` wie die
+  Basis. Eigen: Items, Blueprint-ID, Batch, Upload-Historie. Von der Basis:
+  Blendshapes (geteilte Dictionary-Instanz), FaceEmo (`SettingsName`),
+  Plattformen (`SyncVariantPlatforms`). **Regel:** Wer über `_outfits`
+  iteriert und dabei GameObjects schaltet, vergleicht `Go`, nicht Einträge.
 - `Editor/OutfitTextureOptimizer.cs`: Textursammlung, VRAM-Schätzung und
   Importer-Optimierung.
 - `Editor/OutfitContacts.cs`: Budgetauswertung für Contacts, Lights und
   Parameter.
 - `Editor/OutfitDryRun.cs`: nichtdestruktive Vorabprüfung eines Uploads.
-- `Editor/OutfitApiTools.cs`: reflektiver Zugriff auf VRChat-SDK-Funktionen.
+- `Editor/OutfitApiTools.cs`: Avatarliste, Thumbnail-Update und
+  Einstellungs-Export/Import über die VRChat-API.
+- `Editor/SdkCompat.cs`: einziger Anlaufpunkt für Reflection in VRChat-SDK- und
+  Unity-Interna. Lookups sind gecacht, fehlende Typen und Methoden warnen
+  einmalig und deaktivieren nur das betroffene Feature. **Regel:** Als Typ
+  (`typeof`, Variablentyp) dürfen nur dokumentierte öffentliche SDK-Typen
+  stehen (`VRCApi`, `VRCAvatar`). Alles andere wird über `FindType` per Name
+  gesucht — ein `typeof` auf eine SDK-Interna-Klasse lässt bei einem SDK-Update
+  das gesamte Plugin nicht mehr kompilieren.
 
 ## Zustands- und Datenfluss
 
@@ -27,8 +49,20 @@ aktive Outfitzustand steuert Tags, Blueprint-ID, Blendshapes, Items und
 FaceEmo gemeinsam; Erweiterungen dürfen diese Schritte nicht getrennt und
 widersprüchlich nachbauen.
 
+**Invariante:** Die Blueprint-ID am `PipelineManager` entspricht nach
+`ActivateOutfit` immer dem aktiven Eintrag — dessen ID, oder leer, wenn er
+noch keine hat. Eine stehengebliebene fremde ID lässt einen Upload aus dem
+SDK-Fenster den falschen Avatar überschreiben. Wer die ID am Avatar nur lesen
+will (Base Version), nimmt `GetMainBlueprintId()`; das weicht bei leerer ID auf
+ein hochgeladenes Outfit aus.
+
 ## Externe Grenzen
 
 VRChat SDK, VRCFury, FaceEmo und Modular Avatar sind externe Systeme. Optionale
 Integrationen dürfen keine harte Compile-Abhängigkeit erzeugen, sofern das
 bestehende Feature ausdrücklich reflektiv und optional gestaltet ist.
+
+Neue Reflection auf SDK- oder Unity-Interna gehört nach `SdkCompat.cs` und nicht
+in die aufrufende Datei. Die Ausnahmen sind bewusst dort geblieben, wo sie eng
+zum Fachcode gehören: Typerkennung ohne Methodenaufruf (`OutfitContacts.cs`) und
+die UI-Automatisierung der SDK-Panels (`OutfitNewSetup.cs`).

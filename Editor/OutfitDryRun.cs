@@ -89,6 +89,33 @@ namespace ShiroTools
             foreach (var n in dupNames)
                 Err($"Two or more outfits are named \"{n}\" — their saved settings collide. Rename one.");
 
+            // Variants hang on their base outfit's NAME — renaming the outfit object hides them.
+            if (_avatarRoot != null && _outfitsParent != null)
+            {
+                var present = new HashSet<string>(_outfitsParent.transform.Cast<Transform>().Select(t => t.name));
+                foreach (var o in OutfitProjectData.GetOrphanedVariants(_avatarRoot.name, present))
+                    Warn($"Variant \"{o.name}\" belongs to \"{o.baseOutfit}\", which is no longer under " +
+                         $"\"{_outfitsParent.name}\" — the variant is hidden. Rename the outfit back to show it again.");
+            }
+
+            // Duplicate AVATAR names → the project store is keyed by avatar name, so two
+            // identically named avatars in the scene share ONE record. The outfit-name check
+            // above catches collisions within an avatar; this catches them across avatars,
+            // which is the case the Quick-pick row makes easy to walk into.
+            var dupAvatars = _avatarsInScene.Where(a => a != null)
+                                            .GroupBy(a => a.name)
+                                            .Where(g => g.Count() > 1)
+                                            .Select(g => g.Key).ToList();
+            foreach (var n in dupAvatars)
+            {
+                string msg = $"{_avatarsInScene.Count(a => a != null && a.name == n)} avatars in the scene are named " +
+                             $"\"{n}\" — settings are stored per avatar NAME, so they share one record " +
+                             "(Blueprint IDs, blendshapes, items, FaceEmo) and overwrite each other. Rename one.";
+                // Only a live danger once one of them is actually selected.
+                if (_avatarRoot != null && _avatarRoot.name == n) Err(msg);
+                else Warn(msg);
+            }
+
             // Duplicate blueprint IDs across outfits → probably a paste error
             var dupIds = _outfits.Where(o => !string.IsNullOrWhiteSpace(o.BlueprintId))
                                  .GroupBy(o => o.BlueprintId).Where(g => g.Count() > 1).ToList();
@@ -150,7 +177,7 @@ namespace ShiroTools
                     Warn($"{lights} realtime light(s) upload with this outfit — avatars should have 0.");
 
                 // FaceEmo
-                string fe = GetFaceEmoName(o.Name);
+                string fe = GetFaceEmoName(o.SettingsName);
                 if (!string.IsNullOrEmpty(fe) && FindAvatarChild(fe) == null)
                     Warn($"Assigned FaceEmo object \"{fe}\" is missing from the scene.");
 

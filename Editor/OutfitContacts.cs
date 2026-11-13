@@ -260,20 +260,32 @@ namespace ShiroTools
                 GUILayout.Space(12);
 
                 // --- Texture VRAM (estimate, computed amortized so the UI never hitches) ---
-                if (!TryGetVramFor(entry, out long vBytes))
+                if (!TryGetVramFor(entry, out var vram))
                     ColoredLabel("▦ VRAM …", "Calculating texture memory…", _cGray);
                 else
                 {
-                    float mib = vBytes / 1048576f;
+                    float mib = vram.Total / 1048576f;
+                    float bodyMib = vram.Body / 1048576f;
                     float vExc = pc ? 40f : 10f, vGood = pc ? 75f : 18f, vMed = pc ? 110f : 25f, vPoor = pc ? 150f : 40f;
                     string vrank; Color vcol;
                     if (mib <= vGood)      { vrank = mib <= vExc ? "Excellent" : "Good"; vcol = _cGreen; }
                     else if (mib <= vPoor) { vrank = mib <= vMed ? "Medium" : "Poor";    vcol = _cYellow; }
                     else                   { vrank = "Very Poor";                        vcol = _cPoor; }
-                    ColoredLabel($"▦ VRAM ~{mib:0} MiB ({vrank})",
+
+                    // The body share is called out inline: it is normally the largest part, and the
+                    // part the VRAM button reaches least — only through textures the outfit happens
+                    // to share with it, unless the body option is switched on.
+                    string bodyTag = vram.Body > 0 ? $" · body {bodyMib:0}" : "";
+                    ColoredLabel($"▦ VRAM ~{mib:0} MiB ({vrank}){bodyTag}",
                         $"Estimated texture memory of everything uploading with this outfit " +
-                        $"({(pc ? "PC" : "Quest")}: Excellent ≤{vExc:0}, Good ≤{vGood:0}, Medium ≤{vMed:0}, Poor ≤{vPoor:0} MiB). " +
-                        "Use the VRAM button to optimize.", vcol);
+                        $"({(pc ? "PC" : "Quest")}: Excellent ≤{vExc:0}, Good ≤{vGood:0}, Medium ≤{vMed:0}, Poor ≤{vPoor:0} MiB).\n\n" +
+                        $"Breakdown — shared body {bodyMib:0} MiB · this outfit {vram.Outfit / 1048576f:0} MiB · " +
+                        $"items {vram.Items / 1048576f:0} MiB. A texture used by several of them is counted once, " +
+                        "in the broadest one.\n\n" +
+                        "The VRAM button optimizes this outfit and its selected items — including any " +
+                        "texture they happen to share with the body, so the body figure can drop too. " +
+                        "Textures used ONLY by the body need the body option in Defaults, which is off by " +
+                        "default because those textures belong to every outfit.", vcol);
                 }
 
                 GUILayout.FlexibleSpace();

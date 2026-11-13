@@ -8,7 +8,9 @@
 //  sets the PipelineManager blueprintId, applies per-outfit
 //  blendshape overrides, and triggers the VRC SDK build + upload.
 //
-//  Settings are saved in EditorPrefs and persist across sessions.
+//  Per-avatar / per-outfit data lives in the project
+//  (ProjectSettings/ShiroOutfit_data.json — see OutfitProjectData.cs);
+//  window preferences and Express defaults live in EditorPrefs.
 // ============================================================
 
 using System;
@@ -96,6 +98,12 @@ namespace ShiroTools
         private static bool IsValidBlueprintId(string id) =>
             !string.IsNullOrWhiteSpace(id) && BLUEPRINT_ID_REGEX.IsMatch(id.Trim());
 
+        // "rig", "rigs", "rigged", "rigging" as whole words — see HandleBatchError.
+        private static readonly System.Text.RegularExpressions.Regex RIG_WORD_REGEX =
+            new System.Text.RegularExpressions.Regex(
+                @"\brig(s|ged|ging)?\b",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
         // ---- State ----
         [SerializeField] private GameObject _avatarRoot;
         private List<GameObject>     _avatarsInScene   = new List<GameObject>();
@@ -132,6 +140,7 @@ namespace ShiroTools
         private GUIStyle _headerStyle;
         private GUIStyle _activeRowStyle;
         private GUIStyle _inactiveRowStyle;
+        private Texture2D _activeRowTex;   // generated background — this window owns its lifetime
         private bool     _stylesInited;
 
         // ============================================================
@@ -149,6 +158,7 @@ namespace ShiroTools
             _soundEnabled      = EditorPrefs.GetBool(PREFS_SOUND_ENABLED, true);
             _versionMode       = EditorPrefs.GetInt(PREFS_VERSION_MODE, 0);
             _motionBlur        = EditorPrefs.GetBool(PREFS_MOTION_BLUR, true);
+            InitOnboardingState();
             ScanScene();
             EditorSceneManager.sceneOpened += OnSceneOpened;
             EditorApplication.hierarchyChanged += OnHierarchyChangedInvalidate;
@@ -179,6 +189,7 @@ namespace ShiroTools
             StopVramPump();
             StopScrollAnim();
             StopConsentWatcher();
+            DisposeStyles();
             // NOTE: _cts is deliberately left alone here. OnDisable also fires when the window
             // is docked/undocked or the domain reloads mid-batch — disposing or nulling it there
             // made the still-running batch loop throw (ObjectDisposedException /
@@ -203,6 +214,7 @@ namespace ShiroTools
             _items = null;
             ClearVramCache();
             MarkBudgetsDirty();
+            if (OnboardingCardVisible) RefreshForOnboarding();
         }
 
         private void OnSceneOpened(Scene scene, OpenSceneMode mode)
@@ -341,6 +353,7 @@ namespace ShiroTools
             ResetItemUiState();
             ResetFaceEmoUiState();
             ResetNewSetupUiState();
+            ResetVariantUiState();
             ClearVramCache();
             MarkBudgetsDirty();
         }
@@ -351,6 +364,17 @@ namespace ShiroTools
         /// </summary>
         private void RebuildOutfitList()
         {
+            // The rows are recreated below. Remember what was open — same avatar only, outfit
+            // names repeat across avatars — or adding a variant (and every hierarchy change while
+            // the onboarding card is up) collapses the very row someone is working in.
+            Dictionary<string, OutfitEntry> previousRows = null;
+            if (_uiStateAvatar == _avatarRoot && _outfits.Count > 0)
+            {
+                previousRows = new Dictionary<string, OutfitEntry>();
+                foreach (var o in _outfits)
+                    if (o != null && o.Name != null) previousRows[o.Name] = o;
+            }
+
             ResetPerAvatarUiStateIfAvatarChanged();
 
             _outfitsParent = null;
@@ -381,8 +405,44 @@ namespace ShiroTools
                     BuildIOS       = data.buildIOS
                 };
                 LoadBlendShapes(entry);
+                KeepRowUiState(previousRows, entry);
                 _outfits.Add(entry);
+
+                // Variants: same outfit object, own name / items / Blueprint ID. Blendshapes are
+                // the base's own dictionary instance, so edits on the base apply to them at once.
+                foreach (var vd in OutfitProjectData.GetVariants(avatarKey, entry.Name))
+                {
+                    var variant = new OutfitEntry
+                    {
+                        Go             = entry.Go,
+                        Name           = vd.name,
+                        BaseName       = entry.Name,
+                        VariantName    = vd.variantName,
+                        Data           = vd,
+                        BlueprintId    = vd.blueprintId ?? "",
+                        IncludeInBatch = vd.includeInBatch,
+                        BuildWindows   = entry.BuildWindows,
+                        BuildAndroid   = entry.BuildAndroid,
+                        BuildIOS       = entry.BuildIOS,
+                        BlendShapes    = entry.BlendShapes
+                    };
+                    KeepRowUiState(previousRows, variant);
+                    _outfits.Add(variant);
+                }
             }
+        }
+
+        /// <summary>Carries the fold-out / search / scroll state of a row over to its rebuilt
+        /// entry (matched by outfit name). No-op for a row that did not exist before.</summary>
+        private static void KeepRowUiState(Dictionary<string, OutfitEntry> previousRows, OutfitEntry entry)
+        {
+            if (previousRows == null || entry.Name == null) return;
+            if (!previousRows.TryGetValue(entry.Name, out var old)) return;
+
+            entry.DetailsExpanded    = old.DetailsExpanded;
+            entry.BlendShapeExpanded = old.BlendShapeExpanded;
+            entry.BlendShapeSearch   = old.BlendShapeSearch;
+            entry.BlendShapeScroll   = old.BlendShapeScroll;
         }
 
         private static Transform FindDeepChild(Transform parent, string name)
@@ -414,6 +474,13 @@ namespace ShiroTools
             {
                 return pm.blueprintId;
             }
+
+            // No ID on the avatar — normal while an entry that was never uploaded is active
+            // (ActivateOutfit clears it) and during Express. The Base Version row hangs on this
+            // ID: without a stand-in the row vanished, the next rescan emptied the version, and
+            // the following batch stamped none. Any uploaded outfit can stand in.
+            foreach (var o in _outfits)
+                if (o != null && IsValidBlueprintId(o.BlueprintId)) return o.BlueprintId;
             return null;
         }
 
@@ -427,10 +494,20 @@ namespace ShiroTools
             if (Event.current.type == EventType.Repaint)
                 _nestedScrollScreenRects.Clear();
             HandleSmoothScrollEvent();
+            _tipsDrawnThisPass.Clear();
+            // One value for the whole pass — the card's buttons change it only after the pass.
+            bool showOnboarding = OnboardingCardVisible;
 
             // ---- Header ----
             EditorGUILayout.Space(8);
-            EditorGUILayout.LabelField("VRC Outfit Batch Uploader", _headerStyle);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.Label("VRC Outfit Batch Uploader", _headerStyle);
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button(new GUIContent("?", "Show the introduction again"),
+                        EditorStyles.miniButton, GUILayout.Width(24)))
+                    AfterGui(RestartOnboarding);
+            }
             EditorGUILayout.Space(4);
 
             DrawTopBar();
@@ -446,9 +523,17 @@ namespace ShiroTools
                 return;
             }
 
+            // New users get the guide where the bare "no Outfits parent" warning used to be,
+            // and keep it above the list until the first outfit is connected to VRChat.
+            if (showOnboarding)
+            {
+                DrawOnboardingCard();
+                EditorGUILayout.Space(4);
+            }
+
             if (_outfitsParent == null)
             {
-                DrawNoOutfitsMessage();
+                if (!showOnboarding) DrawNoOutfitsMessage();
                 return;
             }
 
@@ -514,6 +599,7 @@ namespace ShiroTools
             _ghostCapture = _motionBlur && _scrollAnimActive;
             if (Event.current.type == EventType.Repaint) _ghostRows.Clear();
 
+            _listSetupOnly = setupOnly;
             _scroll = EditorGUILayout.BeginScrollView(_scroll, GUILayout.ExpandHeight(true));
             for (int i = 0; i < visibleOutfits.Count; i++)
                 DrawOutfitRow(visibleOutfits[i]);
@@ -607,7 +693,10 @@ namespace ShiroTools
             {
                 EditorGUILayout.LabelField("Outfits parent:", GUILayout.Width(82));
                 EditorGUI.BeginChangeCheck();
-                _outfitsParentName = EditorGUILayout.TextField(_outfitsParentName);
+                // Delayed: commits on Enter / focus loss. A live field rebuilt the entire outfit
+                // list on every keystroke, and half-typed names ("Outfi") match nothing — the
+                // list blanked out while you were still typing.
+                _outfitsParentName = EditorGUILayout.DelayedTextField(_outfitsParentName);
                 if (EditorGUI.EndChangeCheck())
                 {
                     EditorPrefs.SetString(PREFS_PARENT_NAME, _outfitsParentName);
@@ -623,7 +712,10 @@ namespace ShiroTools
                 {
                     EditorGUILayout.LabelField("Base Version:", GUILayout.Width(82));
                     EditorGUI.BeginChangeCheck();
-                    _avatarVersion = EditorGUILayout.TextField(_avatarVersion);
+                    // Delayed: SetVersion rewrites ShiroOutfit_versions.json atomically
+                    // (temp file + File.Replace + .bak). Per keystroke that is one full
+                    // rewrite per character typed.
+                    _avatarVersion = EditorGUILayout.DelayedTextField(_avatarVersion);
                     if (EditorGUI.EndChangeCheck())
                     {
                         AvatarVersionManager.SetVersion(mainId, _avatarVersion);
@@ -674,11 +766,11 @@ namespace ShiroTools
         private void DrawOutfitRow(OutfitEntry entry)
         {
             if (entry.Go == null) return;
-            bool isActive = entry.Go.CompareTag("Untagged");
+            bool isActive = IsShownActive(entry);
             bool hasBlueprintId = !string.IsNullOrWhiteSpace(entry.BlueprintId);
             bool idValid = !hasBlueprintId || IsValidBlueprintId(entry.BlueprintId);
 
-            var rowStyle = isActive ? _activeRowStyle : _inactiveRowStyle;
+            var rowStyle = RowStyleFor(entry, isActive);
             using (new EditorGUILayout.VerticalScope(rowStyle))
             {
                 // Compact summary row. Configuration and secondary actions live behind Details.
@@ -686,7 +778,7 @@ namespace ShiroTools
                 {
                     string icon = isActive ? "●" : "○";
                     entry.DetailsExpanded = EditorGUILayout.Foldout(
-                        entry.DetailsExpanded, $"{icon}  {entry.Name}", true,
+                        entry.DetailsExpanded, $"{icon}  {RowLabel(entry)}", true,
                         EditorStyles.foldoutHeader);
                     GUILayout.FlexibleSpace();
 
@@ -736,6 +828,9 @@ namespace ShiroTools
 
                 // Keep the most useful health summary visible even while collapsed.
                 DrawContactCounter(entry);
+                DrawTip("vram",
+                    "▦ VRAM is the texture memory this outfit's upload would use; \"body\" is the part every " +
+                    "outfit carries. The VRAM button shrinks oversized textures and asks before it changes anything.");
 
                 if (!entry.DetailsExpanded)
                 {
@@ -750,7 +845,10 @@ namespace ShiroTools
                     var oldBg = GUI.backgroundColor;
                     if (!idValid) GUI.backgroundColor = new Color(1f, 0.45f, 0.45f);
                     EditorGUI.BeginChangeCheck();
-                    entry.BlueprintId = EditorGUILayout.TextField(entry.BlueprintId ?? "", GUILayout.ExpandWidth(true));
+                    // Delayed: Save() serializes and rewrites the ENTIRE store (every avatar,
+                    // every outfit) atomically. A live field did that once per character, and
+                    // the format warning fired on every half-pasted ID.
+                    entry.BlueprintId = EditorGUILayout.DelayedTextField(entry.BlueprintId ?? "", GUILayout.ExpandWidth(true));
                     if (EditorGUI.EndChangeCheck())
                     {
                         entry.BlueprintId = (entry.BlueprintId ?? "").Trim();
@@ -781,6 +879,8 @@ namespace ShiroTools
                 if (!hasBlueprintId)
                     DrawInlineNewOutfitButtons(entry);
 
+                // Variants build for their base's platforms (see OutfitVariants.cs).
+                if (!entry.IsVariant)
                 using (new EditorGUILayout.HorizontalScope())
                 {
                     EditorGUILayout.LabelField("Build platforms", EditorStyles.miniLabel, GUILayout.Width(96));
@@ -794,6 +894,7 @@ namespace ShiroTools
                         entry.Data.buildWindows = entry.BuildWindows;
                         entry.Data.buildAndroid = entry.BuildAndroid;
                         entry.Data.buildIOS     = entry.BuildIOS;
+                        SyncVariantPlatforms(entry);
                         OutfitProjectData.Save();
                     }
                 }
@@ -809,12 +910,15 @@ namespace ShiroTools
                     EditorGUILayout.LabelField(last, EditorStyles.miniLabel);
                 }
 
-                // Row 4: blendshape foldout
-                DrawBlendShapeFoldout(entry);
+                // Row 4: blendshape foldout — a variant uses its base's
+                if (!entry.IsVariant) DrawBlendShapeFoldout(entry);
 
-                // Per-outfit item (accessory) selection + FaceEmo
+                // Per-outfit item (accessory) selection + FaceEmo (FaceEmo, too, comes from the base)
                 DrawOutfitItems(entry);
-                DrawOutfitFaceEmo(entry);
+                if (!entry.IsVariant) DrawOutfitFaceEmo(entry);
+
+                if (entry.IsVariant) DrawVariantFooter(entry);
+                else                 DrawAddVariantRow(entry);
 
             EndCard:;
             }
@@ -956,6 +1060,9 @@ namespace ShiroTools
             int ready     = _outfits.Count(o => o.IncludeInBatch && !string.IsNullOrWhiteSpace(o.BlueprintId));
             int needSetup = included - ready;
 
+            DrawTip("batch",
+                "Ticked outfits upload one after another. If Unity switches platform or recompiles in " +
+                "between, the queue picks up where it left off.");
             using (new EditorGUILayout.HorizontalScope())
             {
                 EditorGUILayout.LabelField("Batch Upload", EditorStyles.boldLabel);
@@ -1107,7 +1214,9 @@ namespace ShiroTools
             {
                 if (entry.Go == null) continue;
 
-                bool   wantActive = (entry == target);
+                // Compare objects, not entries: a variant and its base share one outfit object,
+                // and comparing entries let whichever came last in the list switch it off again.
+                bool   wantActive = (entry.Go == target.Go);
                 string wantTag    = wantActive ? "Untagged" : "EditorOnly";
 
                 bool tagNeedsChange    = entry.Go.tag       != wantTag;
@@ -1124,15 +1233,25 @@ namespace ShiroTools
                 EditorUtility.SetDirty(entry.Go);
             }
 
-            // Switch PipelineManager blueprintId
-            if (!string.IsNullOrWhiteSpace(target.BlueprintId) && _avatarRoot != null)
+            // Keep the PipelineManager's blueprintId in step with the active entry: its ID, or
+            // none while it has none yet. Only setting it when the target had one left the
+            // PREVIOUS outfit's ID on the avatar — an upload from the VRChat SDK window then
+            // overwrote that other avatar with this outfit (easy to hit with a fresh variant).
+            string removedId = null;
+            if (_avatarRoot != null)
             {
                 var pm = _avatarRoot.GetComponentInChildren<PipelineManager>();
-                if (pm != null && pm.blueprintId != target.BlueprintId)
+                if (pm != null)
                 {
-                    Undo.RecordObject(pm, "Set Blueprint ID");
-                    pm.blueprintId = target.BlueprintId;
-                    EditorUtility.SetDirty(pm);
+                    string wantId = string.IsNullOrWhiteSpace(target.BlueprintId) ? "" : target.BlueprintId;
+                    string hasId  = pm.blueprintId ?? "";
+                    if (hasId != wantId)
+                    {
+                        if (wantId.Length == 0 && !string.IsNullOrWhiteSpace(hasId)) removedId = hasId;
+                        Undo.RecordObject(pm, "Set Blueprint ID");
+                        pm.blueprintId = wantId;
+                        EditorUtility.SetDirty(pm);
+                    }
                 }
             }
 
@@ -1159,6 +1278,8 @@ namespace ShiroTools
                 EditorUtility.SetDirty(_skinRenderer);
             }
 
+            _activatedName = target.Name;
+
             // Apply item (accessory) include/exclude tags for THIS outfit's selection
             ApplyItemStates(target);
 
@@ -1168,8 +1289,33 @@ namespace ShiroTools
             Undo.CollapseUndoOperations(group);
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
 
-            SetStatus($"✓ Activated: {target.Name}", MessageType.Info);
+            if (removedId == null) SetStatus($"✓ Activated: {target.Name}", MessageType.Info);
+            else                   ReportRemovedBlueprintId(target, removedId);
             Repaint();
+        }
+
+        /// <summary>The entry just activated has no Blueprint ID, so the one on the avatar was
+        /// taken off. Say so — and if no outfit here uses that ID, it existed only on the avatar
+        /// (uploaded before this tool was used, say), so put it in the Console instead of
+        /// letting it disappear without a trace.</summary>
+        private void ReportRemovedBlueprintId(OutfitEntry target, string removedId)
+        {
+            bool usedByAnOutfit = _outfits.Any(o => o != null &&
+                string.Equals((o.BlueprintId ?? "").Trim(), removedId.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (usedByAnOutfit)
+            {
+                SetStatus($"✓ Activated: {target.Name} — it has no Blueprint ID yet, so the avatar's ID was cleared.",
+                    MessageType.Info);
+                return;
+            }
+
+            Debug.Log($"[OutfitBatchUploader] Took Blueprint ID {removedId} off the avatar: \"{target.Name}\" has none " +
+                      "yet, and leaving it there would let an upload from the VRChat SDK window overwrite that avatar " +
+                      "with this outfit. No outfit in this tool uses that ID — if it belongs to one, paste it into that " +
+                      "outfit's Blueprint ID field. Ctrl+Z undoes the Select and puts it back.");
+            SetStatus($"✓ Activated: {target.Name} — it has no Blueprint ID yet, so {removedId} was taken off the avatar. " +
+                      "No outfit here uses that ID; it is in the Console if you need it (Ctrl+Z puts it back).",
+                MessageType.Info);
         }
 
         // ---- Blendshape persistence ----
@@ -1571,9 +1717,12 @@ namespace ShiroTools
             string outfitName = failed.outfit;
             VRCPlatform platform = ParsePlatform(failed.platform);
 
+            // "rig" as a whole word only: a bare Contains("rig") also hit "copyright", "right" and
+            // "original", so e.g. an ownership or network error was skipped as a validation error
+            // — for every remaining outfit, without asking — instead of stopping to ask.
             bool isValidation = ex.GetType().Name.Contains("Validation") ||
                                 ex.Message.Contains("bone") || ex.Message.Contains("Bone") ||
-                                ex.Message.Contains("rig") || ex.Message.Contains("humanoid") ||
+                                RIG_WORD_REGEX.IsMatch(ex.Message) || ex.Message.Contains("humanoid") ||
                                 ex.Message.Contains("Chest") || ex.Message.Contains("validation");
 
             string shortMsg = ex.Message.Length > 120 ? ex.Message.Substring(0, 120) + "…" : ex.Message;
@@ -1978,11 +2127,12 @@ namespace ShiroTools
                 alignment = TextAnchor.MiddleLeft
             };
 
+            _activeRowTex = MakeTex(2, 2, new Color(0.15f, 0.45f, 0.15f, 0.35f));
             _activeRowStyle = new GUIStyle(EditorStyles.helpBox)
             {
                 padding = new RectOffset(6, 6, 4, 4),
                 margin  = new RectOffset(0, 0, 0, 0),
-                normal  = { background = MakeTex(2, 2, new Color(0.15f, 0.45f, 0.15f, 0.35f)) }
+                normal  = { background = _activeRowTex }
             };
 
             _inactiveRowStyle = new GUIStyle(EditorStyles.helpBox)
@@ -1996,10 +2146,29 @@ namespace ShiroTools
         {
             var pix = new Color[w * h];
             for (int i = 0; i < pix.Length; i++) pix[i] = col;
-            var t = new Texture2D(w, h);
+            // HideAndDontSave keeps it out of the scene and asset save paths; DisposeStyles()
+            // owns it from here on.
+            var t = new Texture2D(w, h) { hideFlags = HideFlags.HideAndDontSave };
             t.SetPixels(pix);
             t.Apply();
             return t;
+        }
+
+        /// <summary>Releases the generated row background and forces the styles to be rebuilt on
+        /// the next OnGUI. Without this every domain reload and every dock/undock left another
+        /// orphaned Texture2D behind — the source of Unity's "Cleaning up leaked objects" notices.
+        /// Styles and texture are dropped together so a style can never point at a destroyed one.</summary>
+        private void DisposeStyles()
+        {
+            if (_activeRowTex != null) DestroyImmediate(_activeRowTex);
+            _activeRowTex     = null;
+            _activeRowStyle   = null;
+            _inactiveRowStyle = null;
+            // Copies of the row styles — they point at the texture destroyed above.
+            _activeVariantRowStyle   = null;
+            _inactiveVariantRowStyle = null;
+            _headerStyle      = null;
+            _stylesInited     = false;
         }
 
         // ============================================================
@@ -2010,6 +2179,12 @@ namespace ShiroTools
         {
             public GameObject                  Go;
             public string                      Name;
+            // Variants share Go with their base outfit. BaseName is that outfit's name
+            // (null for a normal outfit); settings the variant inherits are keyed by it.
+            public string                      BaseName;
+            public string                      VariantName;
+            public bool                        IsVariant    => !string.IsNullOrEmpty(VariantName);
+            public string                      SettingsName => BaseName ?? Name;
             public string                      BlueprintId      = "";
             public bool                        IncludeInBatch   = true;
             public bool                        BuildWindows     = true;
@@ -2029,126 +2204,6 @@ namespace ShiroTools
             Windows,
             Android,
             iOS
-        }
-    }
-
-    public static class AvatarVersionManager
-    {
-        private static readonly string ConfigPath;
-        private static Dictionary<string, string> _versions;
-
-        [Serializable]
-        private class VersionData
-        {
-            public List<VersionEntry> versions = new List<VersionEntry>();
-        }
-
-        [Serializable]
-        private class VersionEntry
-        {
-            public string blueprintId;
-            public string version;
-        }
-
-        static AvatarVersionManager()
-        {
-            // Save locally to this specific Unity project in the ProjectSettings folder
-            ConfigPath = Path.Combine("ProjectSettings", "ShiroOutfit_versions.json");
-            LoadVersions();
-        }
-
-        private static void LoadVersions()
-        {
-            _versions = new Dictionary<string, string>();
-            if (!File.Exists(ConfigPath)) return;
-
-            try
-            {
-                LoadVersionsFromJson(File.ReadAllText(ConfigPath));
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[AvatarVersionManager] Failed to load versions: {ex.Message}");
-                try
-                {
-                    string backupPath = ConfigPath + ".bak";
-                    if (File.Exists(backupPath))
-                    {
-                        LoadVersionsFromJson(File.ReadAllText(backupPath));
-                        Debug.LogWarning("[AvatarVersionManager] Recovered versions from ShiroOutfit_versions.json.bak.");
-                    }
-                }
-                catch (Exception backupEx)
-                {
-                    Debug.LogError($"[AvatarVersionManager] Failed to recover versions backup: {backupEx.Message}");
-                }
-            }
-        }
-
-        private static void LoadVersionsFromJson(string json)
-        {
-            var data = JsonUtility.FromJson<VersionData>(json);
-            if (data?.versions == null) throw new InvalidDataException("Missing versions collection.");
-            _versions.Clear();
-            foreach (var entry in data.versions)
-                if (!string.IsNullOrWhiteSpace(entry.blueprintId))
-                    _versions[entry.blueprintId] = entry.version;
-        }
-
-        private static void SaveVersions()
-        {
-            try
-            {
-                var data = new VersionData();
-                foreach (var kvp in _versions)
-                    data.versions.Add(new VersionEntry { blueprintId = kvp.Key, version = kvp.Value });
-                
-                string json = JsonUtility.ToJson(data, true);
-                Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath));
-                OutfitProjectData.WriteAtomically(ConfigPath, json);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[AvatarVersionManager] Failed to save versions: {ex.Message}");
-            }
-        }
-
-        public static string GetVersion(string blueprintId)
-        {
-            if (string.IsNullOrWhiteSpace(blueprintId)) return "";
-            _versions.TryGetValue(blueprintId, out string version);
-            return version ?? "";
-        }
-
-        public static void SetVersion(string blueprintId, string version)
-        {
-            if (string.IsNullOrWhiteSpace(blueprintId)) return;
-            _versions[blueprintId] = version;
-            SaveVersions();
-        }
-
-        internal static string ExportRaw()
-        {
-            var data = new VersionData();
-            foreach (var kvp in _versions)
-                data.versions.Add(new VersionEntry { blueprintId = kvp.Key, version = kvp.Value });
-            return JsonUtility.ToJson(data);
-        }
-
-        internal static bool ImportRaw(string json)
-        {
-            try
-            {
-                var data = JsonUtility.FromJson<VersionData>(json);
-                if (data?.versions == null) return false;
-                _versions.Clear();
-                foreach (var e in data.versions)
-                    if (!string.IsNullOrWhiteSpace(e.blueprintId))
-                        _versions[e.blueprintId] = e.version;
-                SaveVersions();
-                return true;
-            }
-            catch { return false; }
         }
     }
 }

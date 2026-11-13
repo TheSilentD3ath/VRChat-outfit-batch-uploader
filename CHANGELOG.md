@@ -3,6 +3,26 @@
 All notable changes to the VRC Outfit Batch Uploader are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/). Detailed release notes for each version are on the [GitHub Releases page](https://github.com/TheSilentD3ath/VRChat-outfit-batch-uploader/releases).
 
+## [Unreleased]
+
+### Added
+- First-run guide for new users: a card in the window walks through choosing the avatar, creating the Outfits and Items objects (one click, undoable), adding the first outfit and connecting it to VRChat. Steps tick themselves off as you work; skippable, and the **?** in the header brings it back. People who have used the tool before never see it.
+- One-time tips next to Items, Batch Upload and the VRAM counter, for new users after the guide.
+- Outfit variants: upload the same outfit several times with different items, each as its own avatar with its own Blueprint ID (`Outfit – Variant`). Variants share blendshapes, FaceEmo and platforms with their outfit; the dry run warns when renaming an outfit hides its variants.
+- VRAM counter splits body, outfit and items; texture optimization can optionally include the shared body textures (off by default, always confirmed).
+- Dry run warns when two avatars in the scene share a name (their settings would overwrite each other).
+
+### Fixed
+- Closing the window cancels a running batch; docking or a domain reload no longer breaks it.
+- Express quiet mode survives a domain reload.
+- Text fields for outfits parent, items parent, Blueprint ID and base version no longer save and rebuild on every keystroke.
+- Switching avatars clears the previous avatar's drafts and cached values.
+- Fetch-my-avatars reports an unsupported SDK instead of silently returning nothing.
+- Texture memory leak in the outfit list background; faster texture scanning.
+- **Select** on an outfit or variant without a Blueprint ID left the previously active outfit's ID on the avatar, so an upload from the VRChat SDK window overwrote that other avatar. The ID is now cleared in that case (undoable; an ID no outfit uses is written to the Console). The Base Version row stays available while the avatar has no ID.
+- Upload errors whose text merely contains "rig" (as in "copyright" or "right") are no longer mistaken for avatar validation errors and skipped without asking.
+- The copyright pre-consent no longer depends on an SDK class at compile time: if a VRChat SDK update moves or removes it, only that convenience switches off instead of the whole tool failing to compile.
+
 ## [3.3.0] — 2026-08-23 — UI & Backend Optimization
 
 ### Changed

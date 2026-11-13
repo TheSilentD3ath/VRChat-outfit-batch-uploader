@@ -114,11 +114,255 @@ tatsächlich entfernt. `CHANGELOG.md` bleibt die konsolidierte Quelle.
   läuft. Die daraus folgende `ObjectDisposedException` wird von
   `HandleBatchError` gefangen. Eine saubere Lösung bräuchte eine Lauf-ID; das
   gehört in einen eigenen Schritt.
-- Nicht angefasst und weiterhin offen: Dateigröße von `OutfitBatchUploader.cs`,
-  Doppelmodell `OutfitEntry`/`OutfitData`, namensbasierte Identität,
-  `FlushScene()` speichert ungefragt, fehlende Tests/CI, fehlendes `.asmdef`,
-  JSON-Schreibvorgang pro Tastendruck in den Textfeldern für Blueprint-ID,
-  Version und Outfits-Parent, unterschiedlicher Umfang von VRAM-Anzeige und
-  VRAM-Optimierung, langsamer `ShaderUtil`-Pfad in `CollectOutfitTextures`,
-  `_expressQuietMode` bei frühen Returns, Texture-Leak in `MakeTex`, fehlender
-  Dry-Run-Check auf doppelte Avatarnamen.
+- Nicht angefasst und weiterhin offen: Doppelmodell `OutfitEntry`/`OutfitData`,
+  namensbasierte Identität, `FlushScene()` speichert ungefragt, fehlende
+  Tests/CI, fehlendes `.asmdef`.
+
+---
+
+## Nachtrag desselben Tages: Eingabe-, Performance- und Lebenszyklusfixes
+
+### Textfelder schreiben nicht mehr pro Tastendruck
+
+Vier Felder committeten bei jedem Zeichen. `EditorGUILayout.DelayedTextField`
+löst jetzt erst bei Enter oder Fokusverlust aus:
+
+- Blueprint-ID (`OutfitBatchUploader.cs`): `OutfitProjectData.Save()`
+  serialisiert und ersetzt den **gesamten** Store atomar — das lief bisher
+  einmal pro getipptem Zeichen. Nebeneffekt: die Formatwarnung erscheint nicht
+  mehr während des Tippens beziehungsweise bei halb eingefügten IDs.
+- Base Version (`OutfitBatchUploader.cs`): `AvatarVersionManager.SetVersion`
+  schreibt `ShiroOutfit_versions.json` über Temp-Datei, `File.Replace` und
+  `.bak` neu.
+- Outfits-Parent (`OutfitBatchUploader.cs`) und Items-Parent
+  (`OutfitItems.cs`): zusätzlich zum EditorPrefs-Write lief ein vollständiger
+  Listen-Rebuild pro Zeichen, und Zwischenstände wie `Outfi` finden nichts —
+  die Outfit- beziehungsweise Item-Liste leerte sich sichtbar beim Tippen. Das
+  Items-Feld war im ursprünglichen Review übersehen worden und fiel erst bei der
+  abschließenden Prüfung auf.
+
+Die reinen Filterfelder (Blendshape-Suche, Item-Suche, Item-Defaults-Suche)
+bleiben bewusst live; sie lösen keinen IO aus. Die Entwurfsfelder in
+`DrawAdvancedPanel` und `OutfitConfigWindow` schreiben nur in speicherinterne
+`AdvancedDraft`-Objekte und bleiben ebenfalls live.
+
+### Langsamer Shader-Pfad entfernt
+
+`CollectOutfitTextures` in `OutfitTextureOptimizer.cs` iterierte weiterhin über
+`ShaderUtil.GetPropertyCount`/`GetPropertyType`/`GetPropertyName`. Der
+Dateikopf erklärt selbst, warum das auf Poiyomi und lilToon zu langsam ist, und
+`ComputeVramFor` nutzt deshalb längst `Material.GetTexturePropertyNames()`.
+Genau der Optimizer-Pfad, der beim VRAM-Button und in Express läuft, zahlte die
+Kosten noch. Gleiche Texturmenge, jetzt derselbe Weg wie die Anzeige.
+
+### Texture-Leak im Zeilenhintergrund
+
+`MakeTex` erzeugte eine `Texture2D`, die ausschließlich vom `GUIStyle`
+referenziert wurde. `_stylesInited` ist nicht serialisiert, also entstand nach
+jedem Domain Reload und jedem An-/Abdocken eine neue Textur, während die alte
+verwaiste — die Quelle von Unitys „Cleaning up leaked objects". Neu:
+
+- `MakeTex` setzt `HideFlags.HideAndDontSave`,
+- das Feld `_activeRowTex` hält die Referenz,
+- `DisposeStyles()` zerstört sie und setzt `_stylesInited` zurück, sodass Stile
+  und Textur immer gemeinsam neu entstehen und kein Stil auf eine zerstörte
+  Textur zeigen kann,
+- Aufruf aus `OnDisable`.
+
+### Korrektur einer Review-Aussage zu `_expressQuietMode`
+
+Der ursprüngliche Review behauptete, ein früher Return in `ExpressSetupAsync`
+lasse das Flag auf `true` stehen. **Das ist falsch.** Jeder Standalone-Aufruf
+übergibt `skipConfirm: false` und setzt das Flag damit selbst zurück, und der
+Gate-Loop in `StartBatchWithSetupAsync` verwendet ausschließlich
+`continue`, erreicht sein abschließendes `_expressQuietMode = false` also immer.
+
+Ein echter Defekt liegt an derselben Stelle in der Gegenrichtung: das Flag ist
+ein einfaches Feld und überlebt keinen Domain Reload. Löst ein Express-Vorgang
+innerhalb des Upload-All-Gates einen Reload aus, setzt der fortgesetzte Upload
+in `ContinueExpressUploadAsync` den Bestätigungston pro Outfit ab — genau das,
+was der Quiet-Modus verhindern soll. Behoben über den neuen SessionState-Key
+`Shiro_Express_Quiet`, geschrieben zusammen mit dem übrigen Resume-Record,
+gelesen in `ContinueExpressUploadAsync` und in `ClearExpressState` entfernt.
+
+### Dabei aufgefallen, nicht behoben
+
+Der Gate-Loop in `OutfitBatchSetupGate.StartBatchWithSetupAsync` ist als Ganzes
+nicht domain-reload-fest. Anders als die Batch-Queue und der Express-Record
+liegt sein Fortschritt nur im laufenden Task. Löst ein Express-Vorgang mitten
+im Loop einen Reload aus, wird der einzelne Upload zwar korrekt fortgesetzt,
+die verbleibenden unkonfigurierten Outfits werden aber nie eingerichtet und die
+bereits konfigurierten nie gebatcht. Das ist ein eigener, größerer Schritt.
+
+### Prüfstand
+
+Wie oben: statisch geprüft (Delimiterbilanz aller elf Dateien identisch zu
+`HEAD`, neue Symbole genau einmal deklariert, kein `ShaderUtil`-Rest,
+`MakeTex`-Ergebnis wird nirgends mehr verworfen). **Weiterhin nicht in Unity
+kompiliert oder bedient.**
+
+---
+
+## Nachtrag 2: Dry-Run-Check und Dateiaufteilung
+
+### Dry Run erkennt doppelte Avatarnamen
+
+Der Dry Run prüfte bisher doppelte Outfitnamen, aber nicht doppelte
+Avatarnamen. Der Projektstore ist über den Avatarnamen verschlüsselt, zwei
+gleichnamige Avatare in der Szene teilen sich also **einen** Datensatz samt
+Blueprint-IDs, Blendshapes, Items und FaceEmo. Die Quick-Pick-Leiste im
+Kopfbereich macht genau diesen Fall leicht erreichbar.
+
+Neu in `OutfitDryRun.cs` direkt nach der Outfitnamen-Prüfung. Die Meldung ist
+ein Fehler, sobald der aktuell gewählte Avatar zu den Doppelungen gehört, sonst
+eine Warnung — ohne Auswahl ist es noch keine akute Gefahr.
+
+Das ist bewusst nur ein Wächter, keine Lösung. Die eigentliche Ursache bleibt
+die namensbasierte Identität, die weiterhin offen ist.
+
+### `AvatarVersionManager` in eigene Datei
+
+Die Klasse lag am Ende von `OutfitBatchUploader.cs` und war damit weder Teil
+der `partial class` noch bei den übrigen Stores. Sie ist jetzt
+`Editor/AvatarVersionManager.cs`. Der Klassenrumpf wurde zeichengenau
+übernommen und gegen die HEAD-Fassung verglichen; nur Dateikopf und `using`
+sind neu, `using UnityEditor` entfiel als unbenutzt. Eine passende `.meta` mit
+neuer GUID wurde im Format der bestehenden MonoImporter-Dateien angelegt;
+bestehende GUIDs bleiben unberührt.
+
+`OutfitBatchUploader.cs` schrumpft dadurch von 2182 auf 2062 Zeilen. Das ist
+ein erster Schritt gegen die Dateigröße, nicht die Lösung: Scroll- und
+Motion-Blur-Engine, `OutfitEntry` und die übrige UI liegen weiter dort.
+
+### Architekturkarte nachgeführt
+
+`project-memory/ARCHITECTURE_MAP.md` kannte `SdkCompat.cs` nicht — die Datei kam
+mit `54a0bb6`, ohne dass die Karte ergänzt wurde. Eingetragen sind jetzt
+`SdkCompat.cs` und `AvatarVersionManager.cs`; die Beschreibung von
+`OutfitApiTools.cs` nennt nicht mehr Reflection als ihre Aufgabe, da die dort
+verbliebenen Aufrufe jetzt über `SdkCompat` laufen.
+
+Unter „Externe Grenzen" steht neu, dass neue Reflection nach `SdkCompat.cs`
+gehört, mit den zwei bewusst dort belassenen Ausnahmen: die reine Typerkennung
+in `OutfitContacts.cs` (Namensvergleich ohne Methodenaufruf) und die
+UI-Automatisierung der SDK-Panels in `OutfitNewSetup.cs` (Auto-Fixes und
+Copyright-Modal, die an SDK-UI-Elementen statt an API-Methoden hängen).
+
+### Prüfstand
+
+Statisch: verschobener Klassenrumpf zeichengleich zu `HEAD`, Delimiterbilanz
+der Split-Dateien in Summe unverändert, neue `.meta` strukturgleich zu den
+bestehenden und GUID projektweit eindeutig. **Weiterhin nicht in Unity
+kompiliert.** Der Nutzer führt Kompilierung und Bedienung zu Hause durch und
+stellt das Ergebnis anschließend bereit.
+
+---
+
+## Nachtrag 3: VRAM-Umfang von Anzeige und Optimierung
+
+### Das Problem
+
+Die Budgetzeile misst über `CollectUploadRenderers`, also Shared Body plus
+Outfit plus ausgewählte Items. Der Optimizer sammelte über
+`CollectOutfitTextures(entry.Go)`, also nur das Outfit und optional die Items.
+Der Body ist in der Regel der größte Einzelposten. Wer „Very Poor" sah, auf
+VRAM klickte und optimierte, sah die Zahl daher kaum sinken, ohne dass die
+Oberfläche erklärte, warum.
+
+Nach Rücksprache umgesetzt: Opt-in-Schalter plus Aufschlüsselung. Ein
+stillschweigendes Ausweiten des Optimizers auf den Body wurde verworfen, weil
+Body-Texturen zu allen Outfits gehören und die Änderung nicht rückgängig
+gemacht werden kann.
+
+### Eine Klassifizierungsregel für alles
+
+Neu ist `CollectUploadRenderersByBucket(entry, body, outfit, items)`. Es
+enthält die bisherige Regel aus `CollectUploadRenderers` unverändert, sortiert
+die Renderer aber zusätzlich in drei Eimer. „Shared Body" ist alles unterhalb
+des Avatars, das weder im Outfits- noch im Items-Parent liegt.
+`CollectUploadRenderers` bleibt als Verkettung erhalten, damit der
+Quest-Shader-Check im Dry Run unverändert funktioniert.
+
+`CollectTextures(IEnumerable<Renderer>)` ist der gemeinsame Textur-Enumerator;
+`CollectOutfitTextures(GameObject)` ist nur noch ein Aufruf davon. Damit
+verschwindet die zweite, abweichende Textursammlung, die vorher in
+`ComputeVramFor` inline lag.
+
+### Aufschlüsselung
+
+`_vramCache` speichert statt `long` jetzt `VramSplit` mit `Body`, `Outfit`,
+`Items` und `Total`. Die Reihenfolge der Auswertung **ist** die
+Zuordnungsregel: eine Textur, die mehrere Eimer nutzen, wird einmal gezählt,
+und zwar im ersten erreichenden — Body vor Outfit vor Items. Dadurch ergeben
+die drei Zahlen immer exakt die Gesamtsumme, und eine gemeinsam genutzte Textur
+erscheint im breitesten Bereich, der angefasst werden müsste.
+
+Die Budgetzeile zeigt bei vorhandenem Body-Anteil `· body <n>` hinter dem Rang;
+der Tooltip nennt alle drei Zahlen und die Zuordnungsregel.
+
+### Opt-in-Schalter
+
+`ShiroNewOutfit_OptBody`, Standard aus, direkt unter der bestehenden
+Item-Option. `BuildOptimizationPlan` liefert zusätzlich `out bool bodyIncluded`.
+Beide Dialoge nutzen den gemeinsamen `ScopeNote`, der bei Body-Beteiligung
+ausdrücklich schreibt, dass alle Outfits betroffen sind.
+
+Zusätzliche Sicherung in `MaybeOptimizeDuringExpress`: die Bedingung lautet
+`if (_nsOptAsk || bodyInc)`. Ein Plan mit Body-Texturen wird also auch dann
+bestätigt, wenn der Nutzer früher „Always (don't ask again)" gewählt hat. Das
+folgt der Projektregel, dass destruktive Texturänderungen an gemeinsam
+genutzten Texturen explizit bestätigt und benannt werden müssen.
+
+### Bewusste Ungenauigkeit, korrekt benannt
+
+Eine Textur, die Body und Outfit gemeinsam nutzen, erreicht der Optimizer
+bereits ohne den neuen Schalter — über den Renderer des Outfits. In der Anzeige
+liegt sie aber im Body-Eimer. Der Body-Wert kann also sinken, ohne dass die
+Option an ist. Tooltip und Kommentar sagen das jetzt so: der VRAM-Knopf deckt
+Outfit und Items ab einschließlich geteilter Texturen, und nur Texturen, die
+**ausschließlich** der Body nutzt, brauchen den Schalter.
+
+### Prüfstand
+
+Statisch: Delimiterbilanz unverändert, alte Signaturen
+(`BuildOptimizationPlan(entry, out int)`, `BuildOptimizationPlan(List<GameObject>)`,
+`TryGetVramFor(entry, out long)`) restlos ersetzt, neue genau einmal deklariert,
+`CollectUploadRenderers` im Dry Run weiterhin vorhanden. **Nicht in Unity
+kompiliert.** Beim Test besonders zu prüfen: stimmen Body/Outfit/Items in Summe
+mit der vorher angezeigten Gesamtzahl überein, und greift der erzwungene Dialog
+bei aktiviertem Body-Schalter trotz „don't ask again".
+
+## Nachtrag 4 — erster Unity-Test (26.09.2026)
+
+Testpaket `VRChat-outfit-batch-uploader-3.3.0-dev-2e74c29.unitypackage`
+(32 Assets, Layout und GUIDs wie v3.3.0) im Testprojekt importiert.
+
+**Ergebnis aus `Editor.log`:**
+
+- Erster Importdurchlauf: CS0103 für `SdkCompat`/`AvatarVersionManager` —
+  normal, die neuen Dateien waren im ersten Pass noch unbekannt
+  („Tundra requires additional run").
+- Zweiter Durchlauf: **`Tundra build failed`**, einziger Fehler
+  `SdkCompat.cs(69,39): error CS0246: 'VRCCopyrightAgreement' could not be
+  found`. `SdkCompat.cs` (seit `54a0bb6` im Repo) war vorher nie in Unity
+  kompiliert worden; ihm fehlten die VRC-`using`s, mit denen derselbe
+  `typeof(VRCCopyrightAgreement)` in `OutfitBatchUploader.cs` kompiliert hatte.
+- Danach **kein** Domain Reload mehr; die späteren „Tundra build success"-
+  Zeilen sind `PlayerScriptAssemblies` der Avatar-Builds. Der 34-Outfit-Batch
+  (33/34 OK, 00:36–02:05, Ø 2:36 min) lief also auf dem vorher geladenen
+  alten Code und ist **kein** Test dieses Stands.
+- Einziger Fehlschlag `LD_BLK_MA (Breast Big)`: „Avatar validation failed",
+  identisch seit 24.07.2026 — vorbestehend, keine Regression.
+
+**Fix:** `SdkCompat.cs` erhält die komplette VRC-Importmenge des alten
+`OutfitBatchUploader.cs` (`VRC.Core`, `VRC.SDK3A.Editor`,
+`VRC.SDK3.Avatars.Components`, `VRC.SDKBase`, `VRC.SDKBase.Editor`,
+`VRC.SDKBase.Editor.Api`). Die Datei nutzt genau die drei SDK-Typen
+(`VRCApi`, `VRCAvatar`, `VRCCopyrightAgreement`), die dort mit dieser Menge
+gemeinsam kompilierten — Namenskonflikte sind damit ausgeschlossen. Der
+Namespace von `VRCCopyrightAgreement` ließ sich ohne SDK nicht exakt
+bestimmen, daher die bewährte Menge statt eines einzelnen `using`.
+
+Da Roslyn im zweiten Pass alle Bindungsfehler der Assembly meldet und nur
+dieser eine auftrat, sind die übrigen neuen Dateien (u. a.
+`AvatarVersionManager.cs`) kompiliert. **Nachtest offen.**

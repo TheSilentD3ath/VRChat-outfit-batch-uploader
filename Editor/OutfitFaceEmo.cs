@@ -64,13 +64,14 @@ namespace ShiroTools
             foreach (var o in _outfits)
             {
                 if (o == null) continue;
-                string nm = GetFaceEmoName(o.Name);
+                // Variants wear their base outfit's FaceEmo; the same object decides "active".
+                string nm = GetFaceEmoName(o.SettingsName);
                 if (string.IsNullOrEmpty(nm)) continue;
 
                 var go = FindAvatarChild(nm);
                 if (go == null) continue;
 
-                bool active = (o == target);
+                bool active = (o.Go == target.Go);
                 string wantTag = active ? "Untagged" : "EditorOnly";
                 if (go.tag != wantTag)
                 {
@@ -114,13 +115,13 @@ namespace ShiroTools
             EditorUtility.SetDirty(src);
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
 
-            SetFaceEmoName(entry.Name, newName);
+            SetFaceEmoName(entry.SettingsName, newName);
             SetStatus($"✓ Captured FaceEmo for '{entry.Name}'  →  {newName}", MessageType.Info);
         }
 
         private void ClearFaceEmoFor(OutfitEntry entry)
         {
-            SetFaceEmoName(entry.Name, "");
+            SetFaceEmoName(entry.SettingsName, "");
             SetStatus($"Cleared FaceEmo assignment for '{entry.Name}' (the object was left in the scene).", MessageType.Info);
         }
 
@@ -136,7 +137,7 @@ namespace ShiroTools
         // ============================================================
         private void DrawOutfitFaceEmo(OutfitEntry entry)
         {
-            string assigned = GetFaceEmoName(entry.Name);
+            string assigned = GetFaceEmoName(entry.SettingsName);
 
             bool exp = _faceEmoExpanded.TryGetValue(entry.Name, out var e) && e;
             exp = EditorGUILayout.Foldout(exp,
