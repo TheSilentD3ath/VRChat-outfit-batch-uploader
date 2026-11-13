@@ -474,6 +474,13 @@ namespace ShiroTools
             {
                 return pm.blueprintId;
             }
+
+            // No ID on the avatar — normal while an entry that was never uploaded is active
+            // (ActivateOutfit clears it) and during Express. The Base Version row hangs on this
+            // ID: without a stand-in the row vanished, the next rescan emptied the version, and
+            // the following batch stamped none. Any uploaded outfit can stand in.
+            foreach (var o in _outfits)
+                if (o != null && IsValidBlueprintId(o.BlueprintId)) return o.BlueprintId;
             return null;
         }
 
@@ -1226,15 +1233,25 @@ namespace ShiroTools
                 EditorUtility.SetDirty(entry.Go);
             }
 
-            // Switch PipelineManager blueprintId
-            if (!string.IsNullOrWhiteSpace(target.BlueprintId) && _avatarRoot != null)
+            // Keep the PipelineManager's blueprintId in step with the active entry: its ID, or
+            // none while it has none yet. Only setting it when the target had one left the
+            // PREVIOUS outfit's ID on the avatar — an upload from the VRChat SDK window then
+            // overwrote that other avatar with this outfit (easy to hit with a fresh variant).
+            string removedId = null;
+            if (_avatarRoot != null)
             {
                 var pm = _avatarRoot.GetComponentInChildren<PipelineManager>();
-                if (pm != null && pm.blueprintId != target.BlueprintId)
+                if (pm != null)
                 {
-                    Undo.RecordObject(pm, "Set Blueprint ID");
-                    pm.blueprintId = target.BlueprintId;
-                    EditorUtility.SetDirty(pm);
+                    string wantId = string.IsNullOrWhiteSpace(target.BlueprintId) ? "" : target.BlueprintId;
+                    string hasId  = pm.blueprintId ?? "";
+                    if (hasId != wantId)
+                    {
+                        if (wantId.Length == 0 && !string.IsNullOrWhiteSpace(hasId)) removedId = hasId;
+                        Undo.RecordObject(pm, "Set Blueprint ID");
+                        pm.blueprintId = wantId;
+                        EditorUtility.SetDirty(pm);
+                    }
                 }
             }
 
@@ -1272,8 +1289,33 @@ namespace ShiroTools
             Undo.CollapseUndoOperations(group);
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
 
-            SetStatus($"✓ Activated: {target.Name}", MessageType.Info);
+            if (removedId == null) SetStatus($"✓ Activated: {target.Name}", MessageType.Info);
+            else                   ReportRemovedBlueprintId(target, removedId);
             Repaint();
+        }
+
+        /// <summary>The entry just activated has no Blueprint ID, so the one on the avatar was
+        /// taken off. Say so — and if no outfit here uses that ID, it existed only on the avatar
+        /// (uploaded before this tool was used, say), so put it in the Console instead of
+        /// letting it disappear without a trace.</summary>
+        private void ReportRemovedBlueprintId(OutfitEntry target, string removedId)
+        {
+            bool usedByAnOutfit = _outfits.Any(o => o != null &&
+                string.Equals((o.BlueprintId ?? "").Trim(), removedId.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (usedByAnOutfit)
+            {
+                SetStatus($"✓ Activated: {target.Name} — it has no Blueprint ID yet, so the avatar's ID was cleared.",
+                    MessageType.Info);
+                return;
+            }
+
+            Debug.Log($"[OutfitBatchUploader] Took Blueprint ID {removedId} off the avatar: \"{target.Name}\" has none " +
+                      "yet, and leaving it there would let an upload from the VRChat SDK window overwrite that avatar " +
+                      "with this outfit. No outfit in this tool uses that ID — if it belongs to one, paste it into that " +
+                      "outfit's Blueprint ID field. Ctrl+Z undoes the Select and puts it back.");
+            SetStatus($"✓ Activated: {target.Name} — it has no Blueprint ID yet, so {removedId} was taken off the avatar. " +
+                      "No outfit here uses that ID; it is in the Console if you need it (Ctrl+Z puts it back).",
+                MessageType.Info);
         }
 
         // ---- Blendshape persistence ----

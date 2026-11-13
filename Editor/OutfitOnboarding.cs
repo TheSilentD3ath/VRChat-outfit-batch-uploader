@@ -238,8 +238,8 @@ namespace ShiroTools
         {
             EditorGUILayout.LabelField(
                 "Not on VRChat yet? Open New Outfit and use Express — it uploads the outfit as a new " +
-                "avatar and saves its Blueprint ID. Uploaded before? Paste its Blueprint ID (avtr_…) " +
-                "into the outfit's row below.",
+                "avatar and saves its Blueprint ID. Uploaded before? Open the outfit's row below and " +
+                "paste its Blueprint ID (avtr_…), or pick the avatar with ▾ next to that field.",
                 EditorStyles.wordWrappedLabel);
             GUILayout.Space(4);
             using (new EditorGUI.DisabledScope(_mainPage == 1))

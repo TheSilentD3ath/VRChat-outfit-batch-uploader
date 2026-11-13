@@ -49,6 +49,13 @@ aktive Outfitzustand steuert Tags, Blueprint-ID, Blendshapes, Items und
 FaceEmo gemeinsam; Erweiterungen dürfen diese Schritte nicht getrennt und
 widersprüchlich nachbauen.
 
+**Invariante:** Die Blueprint-ID am `PipelineManager` entspricht nach
+`ActivateOutfit` immer dem aktiven Eintrag — dessen ID, oder leer, wenn er
+noch keine hat. Eine stehengebliebene fremde ID lässt einen Upload aus dem
+SDK-Fenster den falschen Avatar überschreiben. Wer die ID am Avatar nur lesen
+will (Base Version), nimmt `GetMainBlueprintId()`; das weicht bei leerer ID auf
+ein hochgeladenes Outfit aus.
+
 ## Externe Grenzen
 
 VRChat SDK, VRCFury, FaceEmo und Modular Avatar sind externe Systeme. Optionale

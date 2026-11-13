@@ -144,7 +144,7 @@ The first time the tool is opened on a computer — and only if it has never bee
 
 ## Usage
 
-- **Select** — activates a single outfit (sets tags, pipeline ID, blendshapes) without uploading
+- **Select** — activates a single outfit (sets tags, pipeline ID, blendshapes) without uploading. For an outfit or variant that has no Blueprint ID yet, the pipeline ID is cleared, so an upload from the VRChat SDK window cannot overwrite another outfit's avatar
 - **Upload** — activates + uploads a single outfit
 - **Upload All** — processes every "Include in batch" outfit in order. If some selected outfits aren't set up yet (no Blueprint ID), it first asks whether to **Express-setup all** of them or **decide per outfit** (Express / Skip / Configure… in a popup with name, description, tags and thumbnail). Each set-up outfit is created & uploaded on the current platform; the already-configured outfits then run through the normal platform-grouped batch. (New outfits are uploaded on the current platform during setup — run Upload All again to also build them for other platforms.)
 - **Retry failed** — after a batch, any failed or skipped outfits can be re-queued with one click (or dismissed) instead of hunting them down manually.
